@@ -1,0 +1,19 @@
+[Unit]
+Description=Stonk graduation monitor dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stonk-monitor/helius
+ExecStart=/usr/bin/node /opt/stonk-monitor/helius/src/stonk/dashboard.js
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

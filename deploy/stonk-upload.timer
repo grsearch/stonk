@@ -1,0 +1,14 @@
+[Unit]
+Description=Upload daily at 07:00 Beijing with recovery checks
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 Asia/Shanghai
+OnBootSec=2min
+OnUnitInactiveSec=15min
+Persistent=true
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=stonk-upload.service
+
+[Install]
+WantedBy=timers.target

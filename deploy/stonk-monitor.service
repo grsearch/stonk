@@ -1,0 +1,22 @@
+[Unit]
+Description=Stonk CPMM graduation monitor - first 30 minutes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stonk-monitor/helius
+ExecStart=/usr/bin/node /opt/stonk-monitor/helius/src/stonk/index.js
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=40
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+SyslogIdentifier=stonk-monitor
+
+[Install]
+WantedBy=multi-user.target

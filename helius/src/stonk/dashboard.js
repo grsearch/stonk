@@ -1,0 +1,11 @@
+'use strict';
+const path = require('node:path');
+const { readConfig } = require('./config');
+const { options, createServer } = require('../dashboard/server');
+const c = readConfig({ ...process.env, HELIUS_API_KEY: process.env.HELIUS_API_KEY || 'offline-dashboard' });
+const opts = options({ ...process.env, DASHBOARD_PORT: process.env.STONK_DASHBOARD_PORT || process.env.DASHBOARD_PORT || '8788' });
+const server = createServer(c, opts, path.resolve(__dirname, '../..', process.env.COS_EXPORT_DIRECTORY || 'data/stonk/exports'));
+server.on('error', () => { console.error('Stonk dashboard could not listen; check host and port.'); process.exitCode = 1; });
+server.listen(opts.port, opts.host, () => console.log(`Stonk paper + Shadow dashboard: ${opts.host}:${opts.port}`));
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => server.close());
+module.exports = server;

@@ -1,0 +1,86 @@
+'use strict';
+const { Engine } = require('../engine');
+const Store = require('../store');
+const ShadowClient = require('../shadow/client');
+const { StateQuotes } = require('../shadow/state-quotes');
+const { publicConfig } = require('../reporting/archive');
+const { Monitor } = require('./monitor');
+const { Adapter } = require('./adapter');
+const { Valuation } = require('./valuation');
+const { publicKey } = require('./accounts');
+const { active } = require('./protocol');
+// Deliberately contains no signer, wallet, Sender or transaction construction implementation.
+class PaperExecutor {
+  constructor() { this.rpcCalls = 0; }
+  async start() {}
+  stop() {}
+  async buildSwap() { throw Error('Stonk live execution disabled'); }
+  async submit() { throw Error('Stonk live execution disabled'); }
+  async closeAccount() { throw Error('Stonk live execution disabled'); }
+}
+class Runtime {
+  constructor(c, { monitorOptions = {}, workerFactory, store } = {}) {
+    if (c.market !== 'stonk' || c.dryRun !== true || !c.shadow.enabled || c.calibration.enabled) throw Error('Stonk requires paper and Shadow');
+    this.c = c; this.store = store || new Store(c.stateFile, 'paper', 'stonk-paper'); this.executor = new PaperExecutor();
+    this.monitor = new Monitor(c.stonk, { ...monitorOptions,
+      onPool: p => this.pool(p), onSwap: (s, at) => this.swap(s, at), onExpired: pool => { this.engine.expirePool(pool); this.adapter.cache.delete(pool); },
+      onConnection: connected => { this.stream.connected = connected; this.shadow.connection(connected); },
+      onGap: reason => this.shadow.enqueue({ type: 'gap', reason, at: Date.now() }) });
+    const rpc = async (...args) => { this.executor.rpcCalls++; return this.monitor.rpc(...args); };
+    this.adapter = new Adapter(rpc, new Valuation(rpc));
+    this.stream = { connected: false, budgetExceeded: () => this.monitor.dayUsage().bytes >= c.stonk.maxBytes };
+    this.stateQuotes = new StateQuotes(c, { keys: s => this.adapter.keys(s),
+      validate: s => { if (!active(s, Date.now())) throw Error('Graduation window ended'); for (const key of this.adapter.keys(s)) publicKey(key); },
+      decode: (s, values, slot) => this.adapter.state(s, values, slot),
+      request: async (_url, options) => { const body = JSON.parse(options.body); const result = await rpc(body.method, body.params);
+        return { ok: true, json: async () => ({ result }) }; } });
+    this.shadow = new ShadowClient(c, { stateQuotes: this.stateQuotes, ...(workerFactory ? { workerFactory } : {}) });
+    this.engine = new Engine(c, this.store, this.executor, this.stream, this.shadow);
+    this.preparing = new Map();
+  }
+  pool(p) {
+    this.shadow.poolCreated({ ...p, source: 'stonk_migrate_confirmed', createdAt: p.graduatedAt, migrationAt: p.graduatedAt, observedAt: Date.now() });
+    this.warm(p);
+  }
+  warm(p) {
+    if (this.preparing.has(p.pool)) return;
+    const task = this.adapter.prepare(p).catch(() => this.store.log('stonk_valuation_unavailable', { pool: p.pool, quoteMint: p.quoteMint,
+      reason: 'no_verified_pool_metadata_or_fresh_onchain_fx' })).finally(() => this.preparing.delete(p.pool));
+    this.preparing.set(p.pool, task);
+  }
+  async swap(s, at) {
+    if (this.engine.stopped) return;
+    this.engine.ticks++;
+    try {
+      const normalized = await this.adapter.swap(s, at);
+      if (!active(s, Date.now()) || this.engine.stopped) return;
+      this.engine.onSwaps([normalized]);
+    } catch {
+      this.store.log('stonk_unvalued_observation', { pool: s.pool, mint: s.mint, quoteMint: s.quoteMint, signature: s.signature,
+        reason: 'cannot_apply_original_sol_thresholds', rawObservation: s });
+      // Unknown valuation must break the proxy's coverage, not create profitable labels.
+      this.shadow.enqueue({ type: 'pool_gap', pool: s.pool, reason: 'valuation_unavailable', at: Date.now() });
+    }
+  }
+  start() {
+    for (const p of Object.values(this.store.data.positions)) if (!active(p, Date.now())) this.engine.expirePool(p.pool);
+    this.store.log('starting', { mode: 'paper', market: 'stonk', liveExecution: 'disabled_in_code', strategyConfig: publicConfig(this.c) });
+    this.monitor.start();
+    this.tick = setInterval(() => this.engine.tick(), 1000);
+    this.reportTimer = setInterval(() => this.report(), 60000);
+    this.warmTimer = setInterval(() => { for (const p of this.monitor.pools.values()) this.warm(p); }, 10000);
+    this.report();
+  }
+  report() {
+    this.executor.rpcCalls = this.monitor.totalRpc;
+    this.store.data.streamDays = Object.fromEntries(Object.entries(this.monitor.usage).map(([day, usage]) => [day, usage.bytes]));
+    this.engine.report();
+  }
+  async stop() {
+    this.engine.stopped = true; clearInterval(this.tick); clearInterval(this.reportTimer); clearInterval(this.warmTimer);
+    await this.monitor.stop(); await Promise.allSettled(this.preparing.values());
+    while (this.engine.busy || this.engine.ticking) await new Promise(r => setTimeout(r, 10));
+    await this.shadow.close(); this.report(); this.store.close();
+  }
+}
+module.exports = { Runtime, PaperExecutor };

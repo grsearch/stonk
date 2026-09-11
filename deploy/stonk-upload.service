@@ -1,0 +1,25 @@
+[Unit]
+Description=Daily Stonk analysis archive to Tencent COS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/stonk-monitor/helius
+# Let the observation worker flush records preceding the 07:00 boundary.
+ExecStartPre=/usr/bin/sleep 5
+ExecStart=/usr/bin/node /opt/stonk-monitor/helius/scripts/upload-daily.js
+TimeoutStartSec=45min
+Nice=15
+CPUWeight=10
+IOWeight=10
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stonk-upload

@@ -1,0 +1,253 @@
+{
+  "address": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+  "instructions": [
+    {
+      "name": "migrate",
+      "discriminator": [
+        155,
+        234,
+        231,
+        146,
+        236,
+        158,
+        162,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "global"
+        },
+        {
+          "name": "withdraw_authority"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "bonding_curve"
+        },
+        {
+          "name": "associated_bonding_curve"
+        },
+        {
+          "name": "user"
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "pump_amm"
+        },
+        {
+          "name": "pool"
+        },
+        {
+          "name": "pool_authority"
+        },
+        {
+          "name": "pool_authority_mint_account"
+        },
+        {
+          "name": "pool_authority_wsol_account"
+        },
+        {
+          "name": "amm_global_config"
+        },
+        {
+          "name": "wsol_mint"
+        },
+        {
+          "name": "lp_mint"
+        },
+        {
+          "name": "user_pool_token_account"
+        },
+        {
+          "name": "pool_base_token_account"
+        },
+        {
+          "name": "pool_quote_token_account"
+        },
+        {
+          "name": "token_2022_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "pump_amm_event_authority"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        },
+        {
+          "name": "rent"
+        }
+      ]
+    },
+    {
+      "discriminator": [
+        187,
+        203,
+        18,
+        31,
+        206,
+        237,
+        254,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "global"
+        },
+        {
+          "name": "withdraw_authority"
+        },
+        {
+          "name": "base_mint"
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "bonding_curve"
+        },
+        {
+          "name": "associated_base_bonding_curve"
+        },
+        {
+          "name": "associated_quote_bonding_curve"
+        },
+        {
+          "name": "user"
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "pump_amm"
+        },
+        {
+          "name": "pool"
+        },
+        {
+          "name": "pool_authority"
+        },
+        {
+          "name": "pool_authority_mint_account"
+        },
+        {
+          "name": "pool_authority_quote_account"
+        },
+        {
+          "name": "amm_global_config"
+        },
+        {
+          "name": "lp_mint"
+        },
+        {
+          "name": "user_pool_token_account"
+        },
+        {
+          "name": "pool_base_token_account"
+        },
+        {
+          "name": "pool_quote_token_account"
+        },
+        {
+          "name": "base_token_program"
+        },
+        {
+          "name": "quote_token_program"
+        },
+        {
+          "name": "token_2022_program"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "pump_amm_event_authority"
+        },
+        {
+          "name": "rent"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "name": "migrate_v2"
+    }
+  ],
+  "events": [
+    {
+      "name": "CompletePumpAmmMigrationEvent",
+      "discriminator": [
+        189,
+        233,
+        93,
+        185,
+        92,
+        148,
+        234,
+        148
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "CompletePumpAmmMigrationEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint_amount",
+            "type": "u64"
+          },
+          {
+            "name": "sol_amount",
+            "type": "u64"
+          },
+          {
+            "name": "pool_migration_fee",
+            "type": "u64"
+          },
+          {
+            "name": "bonding_curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          }
+        ]
+      }
+    }
+  ],
+  "source": "https://github.com/pump-fun/pump-public-docs/blob/main/idl/pump.json"
+}

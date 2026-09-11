@@ -1,0 +1,17 @@
+{
+  "name": "stonk-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stonk graduated CPMM pools: first 30 minutes, observation only",
+  "main": "src/index.js",
+  "scripts": {
+    "setup": "npm ci --prefix helius",
+    "start": "node helius/src/index.js",
+    "test": "node --test helius/test/*.test.js",
+    "dashboard": "node helius/src/stonk/dashboard.js",
+    "benchmark": "node helius/scripts/benchmark.js"
+  },
+  "engines": {
+    "node": ">=22.16"
+  }
+}
