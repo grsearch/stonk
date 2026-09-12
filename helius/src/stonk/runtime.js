@@ -32,7 +32,7 @@ class Runtime {
     this.stateQuotes = new StateQuotes(c, { keys: s => this.adapter.keys(s),
       validate: s => { if (!active(s, Date.now())) throw Error('Graduation window ended'); for (const key of this.adapter.keys(s)) publicKey(key); },
       decode: (s, values, slot) => this.adapter.state(s, values, slot),
-      request: async (_url, options) => { const body = JSON.parse(options.body); const result = await rpc(body.method, body.params);
+      request: async (_url, options) => { const body = JSON.parse(options.body); const result = await rpc(body.method, body.params, { signal: options.signal });
         return { ok: true, json: async () => ({ result }) }; } });
     this.shadow = new ShadowClient(c, { stateQuotes: this.stateQuotes, ...(workerFactory ? { workerFactory } : {}) });
     this.engine = new Engine(c, this.store, this.executor, this.stream, this.shadow);

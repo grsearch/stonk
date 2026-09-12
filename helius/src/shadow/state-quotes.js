@@ -102,7 +102,12 @@ class StateQuotes {
       if (!Number.isSafeInteger(slot) || slot < Math.max(...valid.map(s => s.slot))) fail('stale_slot');
       if (this.now() - at > 3000 || this.now() < at) fail('stale_response');
       for (const s of valid) {
-        try { results.push(this.result(s, at, await this.decode(s, this.keys(s).map(k => body.result.value[keys.indexOf(k)]), slot))); }
+        try {
+          const quote = await this.decode(s, this.keys(s).map(k => body.result.value[keys.indexOf(k)]), slot);
+          // Stonk decoding also awaits FX: account response freshness alone is insufficient.
+          if (this.controller.signal.aborted || this.now() - at > 3000 || this.now() < at) fail('stale_response');
+          results.push(this.result(s, at, quote));
+        }
         catch (e) { results.push(this.result(s, at, null, e.reason || 'account_decode_failed', e.diagnostics)); }
       }
     } catch (e) {

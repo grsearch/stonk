@@ -131,3 +131,22 @@ test('real Shadow worker runs, responds to original prebuy filter, paper buys/se
   runtime.store.data.positions[p.mint]={...s,entrySol:1,openedAt:Date.now()}; runtime.engine.expirePool(p.pool);
   assert.ok(logs.some(r=>r.type==='paper_censored' && r.netPnlSol===null)); assert.equal(Object.keys(runtime.store.data.positions).length,0);
 });
+
+test('async FX decoding cannot turn a quote older than three seconds into a valid quote', async () => {
+  let now = Date.now();
+  const quotes = new StateQuotes(c, { now: () => now, keys: () => ['account'], validate: () => {},
+    request: async () => ({ ok: true, json: async () => ({ result: { context: { slot: 101 }, value: [{}] } }) }),
+    decode: async () => { now += 3001; return { price: 1 }; } });
+  const rows = await quotes.poll([p]);
+  assert.equal(rows[0].status, 'unavailable'); assert.equal(rows[0].reason, 'stale_response'); quotes.close();
+});
+
+test('CPMM state rejects a base mint absent from the pool even with matching supplied vaults', async () => {
+  const now = Date.now(), values = accounts();
+  const data = Buffer.from(values[0].data[0], 'base64');
+  decode58(p.quoteMint).copy(data, 168); decode58(key(9)).copy(data, 200);
+  decode58(p.quoteVault).copy(data, 72); decode58(p.baseVault).copy(data, 104);
+  values[0] = account(data, CPMM);
+  const adapter = new Adapter(async () => {}, { rate: async () => ({ rate: 1, at: now }) });
+  await assert.rejects(adapter.state({ ...p, graduatedAt: now - 1000 }, values, 101), /identity mismatch/);
+});

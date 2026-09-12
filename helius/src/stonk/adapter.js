@@ -9,7 +9,7 @@ class Adapter {
     if (!active(s, this.now())) throw Error('Graduation window ended');
     const pool = cpmm(values[0]), base = mint(values[1]), quote = mint(values[2]);
     const order = pool.mint0 === s.mint;
-    if ((order ? pool.mint1 : pool.mint0) !== s.quoteMint || (order ? pool.vault0 : pool.vault1) !== s.baseVault ||
+    if ((order ? pool.mint0 : pool.mint1) !== s.mint || (order ? pool.mint1 : pool.mint0) !== s.quoteMint || (order ? pool.vault0 : pool.vault1) !== s.baseVault ||
         (order ? pool.vault1 : pool.vault0) !== s.quoteVault || (order ? pool.program0 : pool.program1) !== base.program ||
         (order ? pool.program1 : pool.program0) !== quote.program) throw Error('CPMM identity mismatch');
     const postBase = vault(values[3], s.mint) - (order ? pool.fees0 : pool.fees1);

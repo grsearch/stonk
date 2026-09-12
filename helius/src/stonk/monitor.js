@@ -41,13 +41,14 @@ class Monitor {
     for (const d of Object.keys(this.usage)) if (d !== day) delete this.usage[d];
     return this.usage[day] ||= { rpc: 0, bytes: 0 };
   }
-  async rpc(method, params) {
+  async rpc(method, params, { signal } = {}) {
+    signal?.throwIfAborted();
     if (this.stopping) throw Error('Monitor stopping');
     if (this.dayUsage().rpc >= this.config.maxRpc) throw Error('RPC daily budget exhausted');
     this.dayUsage().rpc++; this.totalRpc++;
-    if (this.rpcOverride) return this.rpcOverride(method, params);
+    if (this.rpcOverride) return this.rpcOverride(method, params, { signal });
     const response = await fetch(this.config.rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.any([AbortSignal.timeout(15000), this.abort.signal]) });
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.any([AbortSignal.timeout(15000), this.abort.signal, ...(signal ? [signal] : [])]) });
     if (!response.ok) throw Error(`RPC HTTP ${response.status}`);
     const result = await response.json(); if (result.error) throw Error(`RPC code ${result.error.code}`);
     return result.result;
@@ -121,7 +122,10 @@ class Monitor {
   enqueue(work) {
     this.queued = (this.queued || 0) + 1;
     if (this.queued > 2000) { this.queued--; this.log('stream_gap', { reason: 'processing_queue_full' }); this.callbacks.onGap?.('processing_queue_full'); this.ws?.close(); return; }
-    this.queue = this.queue.then(() => this.stopping ? undefined : work()).catch(() => this.log('processing_error', { reason: 'RPC or malformed transaction; discovery recovery will retry' }))
+    this.queue = this.queue.then(() => this.stopping ? undefined : work()).catch(() => {
+      this.log('processing_error', { reason: 'RPC or malformed transaction; swap coverage interrupted' });
+      this.callbacks.onGap?.('transaction_processing_failed');
+    })
       .finally(() => { this.queued--; });
   }
   send(method, params, key) {

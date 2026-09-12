@@ -145,3 +145,22 @@ test('WebSocket envelope subscribes, receives JSON-parsed graduation, and handle
   assert.equal(sent.at(-1).method, 'transactionUnsubscribe'); assert.deepEqual(sent.at(-1).params, [456]);
   await m.stop();
 });
+
+test('failed transaction processing marks a Shadow coverage gap and the queue continues', async t => {
+  const gaps = [], m = monitor(t, { onGap: reason => gaps.push(reason) });
+  m.enqueue(async () => { throw Error('RPC unavailable'); });
+  let continued = false; m.enqueue(async () => { continued = true; });
+  await m.queue;
+  assert.deepEqual(gaps, ['transaction_processing_failed']); assert.equal(continued, true); assert.equal(m.queued, 0);
+});
+
+test('cancelled Shadow RPC is rejected before spending the daily request budget', async t => {
+  let called = false;
+  const m = monitor(t, { rpc: async () => { called = true; } });
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(m.rpc('getMultipleAccounts', [], { signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(called, false); assert.equal(m.totalRpc, 0);
+  const active = new AbortController();
+  m.rpcOverride = async (_method, _params, options) => assert.equal(options.signal, active.signal);
+  await m.rpc('getMultipleAccounts', [], { signal: active.signal });
+});
