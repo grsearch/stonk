@@ -62,7 +62,7 @@ test('waiting candidate cancels after reserve deterioration or signal expiry and
   }
 });
 test('due exits take priority over fresh buys', async () => {
-  const h = setup(); h.store.data.positions.other = { entryPrice: 100, lastPrice: 70, high: 100, openedAt: Date.now() };
+  const h = setup(); h.store.data.positions.other = { entryPrice: 100, lastPrice: 125, high: 125, openedAt: Date.now() };
   await h.engine.buy(h.swap, h.filter()); assert.equal(h.builds(), 0);
 });
 test('executor rechecks the real reserve without applying the buy floor to sells', async () => {

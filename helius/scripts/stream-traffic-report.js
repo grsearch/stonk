@@ -8,12 +8,16 @@ async function report(file) {
   const decoded = file.endsWith('.gz') ? input.pipe(zlib.createGunzip()) : input;
   if (decoded !== input) input.on('error', err => decoded.destroy(err));
   const out = { version: 2, intervals: 0, start: null, end: null, byteCount: 0, categories: {}, reasons: {}, reasonCoveredByteCount: 0,
-    otherPoolByteCount: 0, overflowPoolByteCount: 0, unattributedByteCount: 0 };
+    otherPoolByteCount: 0, overflowPoolByteCount: 0, unattributedByteCount: 0, diagnosticSampleCount: 0, diagnosticExamples: [] };
   const pools = new Map();
   for await (const line of readline.createInterface({ input: decoded, crlfDelay: Infinity })) {
     if (!line.trim()) continue;
     const envelope = JSON.parse(line), r = envelope.record || envelope;
-    if (envelope.context || r.type !== 'stream_traffic' || ![1, 2].includes(r.version)) continue;
+    if (!envelope.context && r.type === 'stream_traffic_sample') {
+      out.diagnosticSampleCount++;
+      if (out.diagnosticExamples.length < 100) out.diagnosticExamples.push(r);
+    }
+    if (envelope.context || r.type !== 'stream_traffic' || ![1, 2, 3].includes(r.version)) continue;
     out.intervals++; out.start = Math.min(out.start ?? r.start, r.start); out.end = Math.max(out.end ?? r.end, r.end);
     out.byteCount += r.byteCount;
     if (r.reasons) {

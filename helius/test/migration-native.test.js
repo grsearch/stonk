@@ -6,7 +6,7 @@ const schema = require('../src/migration-layout.json');
 const { PUMP, WSOL } = require('../src/config');
 const bs58 = require('bs58').default;
 const { key } = require('./fixtures');
-function run(name, eventQuote, change = {}) {
+function run(name, eventQuote, change = {}, balances = []) {
   const spec = schema.instructions.find(s => s.name === name);
   const values = { mint: key(2), pool: key(3), timestamp: 1000, quote_mint: eventQuote };
   const fields = schema.types[0].type.fields.filter(f => f.name !== 'quote_mint' || eventQuote !== undefined);
@@ -15,7 +15,7 @@ function run(name, eventQuote, change = {}) {
     const b = Buffer.alloc(8); b.writeBigInt64LE(BigInt(values[f.name] || 0)); return b;
   })]);
   const accounts = { mint: key(2), base_mint: key(2), pool: key(3), pump_amm: PUMP, wsol_mint: WSOL, quote_mint: WSOL, ...change };
-  const tx = { signature: 'test', receivedAt: 1000001, slot: 1, meta: {}, instructions: [
+  const tx = { signature: 'test', receivedAt: 1000001, slot: 1, keys: [key(4)], meta: { postTokenBalances: balances }, instructions: [
     { program: schema.address, accounts: spec.accounts.map(a => accounts[a.name] || key(4)), data: Buffer.from(spec.discriminator) },
     { program: schema.address, accounts: [], data: Buffer.concat([CPI_TAG, bytes]) },
   ] };
@@ -23,6 +23,12 @@ function run(name, eventQuote, change = {}) {
   return { events, diagnostics };
 }
 for (const name of ['migrate', 'migrate_v2']) {
+  test(`${name}: first migration reserve may be unknown and requires exact WSOL vault`, () => {
+    assert.equal(run(name, WSOL).events[0].reserveSol, null);
+    const balance={accountIndex:0,mint:WSOL,uiTokenAmount:{decimals:9,amount:'50000000000'}};
+    assert.equal(run(name, WSOL, {}, [balance]).events[0].reserveSol, 50);
+    assert.equal(run(name, WSOL, {}, [{...balance,mint:key(9)}]).events[0].reserveSol, null);
+  });
   test(`${name}: default native SOL event quote requires matching WSOL instruction`, () => {
     const r = run(name, '11111111111111111111111111111111');
     assert.equal(r.events.length, 1); assert.equal(r.events[0].migrationAt, 1000000);

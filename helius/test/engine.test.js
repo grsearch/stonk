@@ -6,6 +6,21 @@ const { readConfig } = require('../src/config');
 const { fixture } = require('./fixtures');
 const { parseSwaps } = require('../src/parser');
 const c = readConfig({ HELIUS_API_KEY: 'test' });
+test('fresh pool gate cancels new buys while preserving held-position exit processing', () => {
+  const {engine,store,stream}=setup();
+  stream.fresh={created(){},transaction(){},reserve(){},reason(){return 'reserve_below_50';}};
+  const tx=fixture();const s=parseSwaps(tx)[0];let buys=0,sells=0;
+  store.data.positions[s.mint]={pool:s.pool,entryPrice:s.price*2,lastPrice:s.price*2,high:s.price*2,openedAt:Date.now()};
+  engine.buy=async()=>{buys++;};engine.sell=async()=>{sells++;};engine.onTransaction(tx);
+  assert.equal(buys,0);assert.equal(sells,1);
+});
+test('fresh pool expiration during build prevents a signed buy from being submitted', async () => {
+  const {engine,store,stream}=setup({dryRun:false});const s={...parseSwaps(fixture())[0],impact:20};
+  let closed=false,submitted=false;
+  stream.fresh={reason:()=>closed?'graduation_age_30_minutes':null};
+  engine.executor={buildSwap:async()=>{closed=true;return {};},submit:async()=>{submitted=true;}};
+  await engine.prepareBuy(s);assert.equal(submitted,false);assert.deepEqual(store.data.pending,{});assert.equal(engine.busy,false);
+});
 function setup(extra = {}) {
   const store = { data: { positions: {}, cleanup: {}, cooldown: {}, pending: {}, seen: {}, streamDays: {} }, save() {}, log() {} };
   const stream = { connected: true, budgetExceeded: () => false };

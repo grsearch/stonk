@@ -14,13 +14,14 @@ function config(env = process.env) {
     maxBytes: number('STONK_MAX_STREAM_BYTES_PER_DAY', 1e9, 1, 1e12), historyPages: number('STONK_HISTORY_PAGES', 10, 1, 100) };
 }
 class Monitor {
-  constructor(config, { rpc, socketFactory, now = Date.now, onPool, onSwap, onExpired, onConnection, onGap } = {}) {
+  constructor(config, { rpc, socketFactory, now = Date.now, onPool, onSwap, onExpired, onConnection, onGap, shouldSubscribe = () => true } = {}) {
     this.config = config; this.now = now; this.rpcOverride = rpc;
     this.socketFactory = socketFactory || (url => new WebSocket(url));
     this.pools = new Map(); this.seen = new Map(); this.blockTimes = new Map(); this.cursors = {}; this.usage = {}; this.stats = { trades: 0, dumps: 0 };
     this.subscriptions = new Map(); this.pending = new Map(); this.nextId = 0; this.queue = Promise.resolve(); this.running = false;
     this.health = { lastDiscoveryAt: null, discoveryComplete: false, discoveryError: null };
     this.callbacks = { onPool, onSwap, onExpired, onConnection, onGap };
+    this.shouldSubscribe = shouldSubscribe;
     this.totalRpc = 0; this.abort = new AbortController();
   }
   log(type, data = {}) {
@@ -134,7 +135,7 @@ class Monitor {
   }
   syncSubscriptions() {
     if (!this.ws || this.ws.readyState !== 1) return;
-    const desired = new Set(['discovery', ...this.pools.keys()]);
+    const desired = new Set(['discovery', ...[...this.pools.keys()].filter(pool => this.shouldSubscribe(pool))]);
     for (const [key, id] of this.subscriptions) if (!desired.has(key)) {
       this.send('transactionUnsubscribe', [id], key); this.subscriptions.delete(key);
     }

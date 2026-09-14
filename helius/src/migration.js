@@ -61,7 +61,13 @@ function migrations(tx, decode, emit, diagnostic = () => {}) {
     const key = `${e.pool}:${e.mint}:${e.timestamp}`;
     if (seen.has(key)) continue; seen.add(key); accepted++;
     if (e.quote_mint === NATIVE_SOL_QUOTE) diagnostic({ stage: 'migration_native_sol_quote_matched', count: 1 });
-    emit({ pool: e.pool, mint: e.mint, createdAt: Number(e.timestamp) * 1000, migrationAt: Number(e.timestamp) * 1000,
+    const matched = specs[comparisons.findIndex(c => c.matched)];
+    const quoteVault = matched.ix.accounts[matched.spec.accounts.findIndex(a => a.name === 'pool_quote_token_account')];
+    const balance = (tx.meta.postTokenBalances || []).find(b => tx.keys[b.accountIndex] === quoteVault && b.mint === WSOL
+      && b.uiTokenAmount?.decimals === 9 && /^\d+$/.test(b.uiTokenAmount.amount));
+    emit({ pool: e.pool, mint: e.mint, quoteVault: quoteVault || null,
+      reserveSol: balance ? Number(balance.uiTokenAmount.amount) / 1e9 : null,
+      createdAt: Number(e.timestamp) * 1000, migrationAt: Number(e.timestamp) * 1000,
       observedAt: tx.receivedAt || Date.now(), signature: tx.signature, slot: tx.slot,
       source: 'pump_migrate_processed', evidenceTransport: transport,
       eventQuoteMint: e.quote_mint ?? null, instructionQuoteMint: WSOL });

@@ -164,3 +164,15 @@ test('cancelled Shadow RPC is rejected before spending the daily request budget'
   m.rpcOverride = async (_method, _params, options) => assert.equal(options.signal, active.signal);
   await m.rpc('getMultipleAccounts', [], { signal: active.signal });
 });
+
+test('Stonk subscriptions obey the reserve gate while retaining a protected position until graduation expires', t => {
+  let allowed = true; const m = monitor(t, { shouldSubscribe: () => allowed });
+  const sent = []; m.ws = { readyState: 1, send: text => sent.push(JSON.parse(text)) };
+  m.pools.set(pool.pool, pool); m.subscriptions.set('discovery', 1); m.subscriptions.set(pool.pool, 2);
+  m.syncSubscriptions(); assert.equal(sent.length, 0);
+  allowed = false; m.syncSubscriptions();
+  assert.equal(sent[0].method, 'transactionUnsubscribe'); assert.deepEqual(sent[0].params, [2]);
+  allowed = true; m.syncSubscriptions(); assert.equal(sent.at(-1).method, 'transactionSubscribe');
+  m.now = () => epoch + WINDOW_MS; m.expire();
+  assert.equal(m.pools.size, 0);
+});

@@ -63,7 +63,7 @@ class Tracker {
     this.write({ type: 'session', schema: 1, runId, at: this.now(), policy: this.policy, policyId: this.policyId,
       drawdownModelStatus: this.drawdownModel.status, modelStatus: this.model.status, riskModelStatus: this.riskModel.status, returnModelStatus: this.returnModel.status,
       noStopRecoveryVersion: this.recovery ? 1 : null, exitComparisonVersion: this.exitComparisons ? 1 : null,
-      exitResearchVersion: 3, stateQuoteVersion: this.stateRecovery ? 1 : null, stateQuoteSchedulingVersion: this.stateRecovery ? 3 : null, selectionVersion: 7,
+      freshSubscriptions: c.freshSubscriptions, exitResearchVersion: 4, stateQuoteVersion: this.stateRecovery ? 1 : null, stateQuoteSchedulingVersion: this.stateRecovery ? 3 : null, selectionVersion: 7,
       exitVariants: this.exitComparisons ? require('./exit-comparisons').ARMS : [],
       entryResearchVersion: this.entryComparisons ? 1 : null, entryRules: this.entryComparisons ? ENTRY_RULES : null,
       entryVariants: this.entryComparisons ? ENTRY_ARMS : [], entryResearchRequiresKnownPrebuyPass: true,

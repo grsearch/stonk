@@ -62,7 +62,7 @@ test('exit research preserves baseline labels and archives missing variant exits
   }
   assert.deepEqual(enabled.records.filter(r => r.type === 'outcome'), disabled.records.filter(r => r.type === 'outcome'));
   const variants = enabled.records.filter(r => r.type === 'exit_comparison');
-  assert.equal(variants.length, 9); assert.ok(variants.some(r => r.variant === 'exit_1000ms' && r.status === 'censored'));
+  assert.equal(variants.length, 10); assert.ok(variants.some(r => r.variant === 'exit_1000ms' && r.status === 'censored'));
   assert.equal(enabled.tracker.active.size, 0);
 });
 

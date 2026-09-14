@@ -1,12 +1,14 @@
 'use strict';
 const { exitReason } = require('../strategy');
+const earlyFailure = require('./early-failure');
 // Fixed research arms. They share the baseline entry and never submit orders.
 const ARMS = [{ name: 'exit_250ms', delay: 250 }, { name: 'exit_1000ms', delay: 1000 }, { name: 'net_take5', netTake: 5 },
   { name: 'no_fixed_stop', noFixedStop: true },
   { name: 'take30', takeProfit: 30 }, { name: 'take50', takeProfit: 50 },
   { name: 'take30_no_stop', takeProfit: 30, noFixedStop: true },
   { name: 'take50_no_stop', takeProfit: 50, noFixedStop: true },
-  { name: 'take8_first3s', quickTakePct: 8, quickWindowMs: 3000 }];
+  { name: 'take8_first3s', quickTakePct: 8, quickWindowMs: 3000 },
+  { name: 'rebound_failure_3s', earlyFailure: earlyFailure.RULES }];
 function armConfig(c, a) { return { ...c, takeProfit: a.takeProfit ?? c.takeProfit, stopLoss: a.noFixedStop ? Infinity : c.stopLoss }; }
 function armExitReason(c, a, position, price, netPct, at) {
   const age = at - position.openedAt;
@@ -18,18 +20,30 @@ class ExitComparisons {
   constructor(c, emit) { this.c = c; this.emit = emit; }
   states(s) {
     return s.exitComparisons ||= ARMS.map(a => ({ ...a, position: { ...s.entry }, pending: null, done: false,
-      minNetPct: null, maxNetPct: null, firstFixedStopAt: null }));
+      minNetPct: null, maxNetPct: null, firstFixedStopAt: null,
+      ...(a.earlyFailure ? { failureState: earlyFailure.state() } : {}) }));
+  }
+  assessment(s, a, result) {
+    if (result) this.emit({ type: 'early_exit_assessment', id: s.id, key: s.key, at: result.evaluatedAt,
+      variant: a.name, rules: a.earlyFailure, selection: s.selection ?? null, ...result });
   }
   write(s, a, fields, at) {
+    if (a.earlyFailure) {
+      a.failureState ||= earlyFailure.state();
+      this.assessment(s, a, earlyFailure.finish(a.failureState, fields.status === 'censored' ? 'unavailable' : 'not_reached',
+        fields.status === 'censored' ? fields.reason : 'earlier_exit', at, s.entry?.at ?? s.at));
+    }
     a.done = true;
     this.emit({ type: 'exit_comparison', comparisonVersion: 1, id: s.id, key: s.key, at,
       variant: a.name, selection: s.selection ?? null, assumptions: { exitDelayMs: a.delay ?? this.c.exitDelayMs, netTakePct: a.netTake ?? null,
+        ...(a.earlyFailure ? { earlyFailure: a.earlyFailure } : {}),
         quickTakePct: a.quickTakePct ?? null, quickWindowMs: a.quickWindowMs ?? null, quickTakeBasis: a.quickWindowMs ? 'price_from_proxy_entry' : null,
         sameEntryAsBaseline: true, baselinePolicy: 'envelope_policyId', maxHoldMs: this.c.maxHoldMs,
         fixedStopEnabled: !a.noFixedStop, stopLossPct: a.noFixedStop ? null : this.c.stopLoss,
         takeProfitPct: a.takeProfit ?? this.c.takeProfit, trailArmPct: this.c.trailArm, trailDropPct: this.c.trailDrop },
       entryCostSol: s.entry?.cost ?? null, minNetPct: a.minNetPct ?? null, maxNetPct: a.maxNetPct ?? null,
-      firstFixedStopAt: a.firstFixedStopAt ?? null, ...fields });
+      firstFixedStopAt: a.firstFixedStopAt ?? null,
+      ...(a.earlyFailure ? { earlyAssessment: a.failureState.assessment } : {}), ...fields });
   }
   observe(s, swap, net, at) {
     const pnl = (net / s.entry.cost - 1) * 100;
@@ -45,14 +59,20 @@ class ExitComparisons {
           actualExitDelayMs: at - a.pending.at }, at);
       } else if (!a.pending) {
         a.position.high = Math.max(a.position.high, swap.price);
+        const assessment = a.earlyFailure ? earlyFailure.observe(a.failureState, swap, pnl, at, s.entry.at) : null;
+        this.assessment(s, a, assessment);
         // Only this research arm disables the price stop; profit, trailing and time exits remain identical.
-        const reason = armExitReason(this.c, a, a.position, swap.price, pnl, at);
+        const reason = armExitReason(this.c, a, a.position, swap.price, pnl, at)
+          || (assessment?.status === 'failed' ? 'rebound_failure_3s' : null);
         if (reason) a.pending = { reason, at, dueAt: at + (a.delay ?? this.c.exitDelayMs) };
       }
     }
   }
   tick(s, at) {
     if (!s.entry) return;
+    for (const a of this.states(s)) if (a.earlyFailure && !a.done && !a.pending
+      && at - s.entry.at > a.earlyFailure.evaluateAfterMs + a.earlyFailure.maxEvaluationLagMs)
+      this.assessment(s, a, earlyFailure.finish(a.failureState, 'unavailable', 'no_timely_evaluation_quote', at, s.entry.at));
     for (const a of this.states(s)) if (!a.done && !a.pending && at - s.entry.at >= this.c.maxHoldMs)
       a.pending = { reason: 'max_hold', at, dueAt: at + (a.delay ?? this.c.exitDelayMs) };
   }

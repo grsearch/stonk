@@ -9,6 +9,7 @@ class StreamTraffic {
   reset() {
     this.start = this.now(); this.total = 0; this.messages = 0;
     this.categories = {}; this.reasons = {}; this.pools = new Map(); this.unattributed = 0; this.overflow = 0;
+    this.sampleCounts = {}; this.sampleTotal = 0;
   }
   record(size, info = {}) {
     this.total += size; this.messages++;
@@ -16,6 +17,12 @@ class StreamTraffic {
     const c = this.categories[category] ||= { messages: 0, byteCount: 0 };
     c.messages++; c.byteCount += size;
     const reasons = [...new Set(info.reasons?.length ? info.reasons : [category])];
+    const diagnosticReason = reasons.find(r => ['unsupported_pair', 'no_amm_instruction', 'unsupported_amm_instruction', 'multiple_pool_instructions'].includes(r));
+    if (diagnosticReason && typeof info.diagnostic === 'function' && this.sampleTotal < 12 && (this.sampleCounts[diagnosticReason] || 0) < 3) {
+      this.sampleTotal++; this.sampleCounts[diagnosticReason] = (this.sampleCounts[diagnosticReason] || 0) + 1;
+      this.log('stream_traffic_sample', { version: 1, reason: diagnosticReason, byteCount: size, ...info.diagnostic(),
+        sampling: 'first_3_per_reason_per_interval_max_12; diagnostic_examples_not_frequency_estimates' });
+    }
     for (const reason of reasons) {
       const row = this.reasons[reason] ||= { messages: 0, byteCount: 0 };
       row.messages++; row.byteCount += size / reasons.length;
@@ -32,12 +39,12 @@ class StreamTraffic {
   flush() {
     if (!this.messages) return;
     const rows = [...this.pools.values()].sort((a, b) => b.byteCount - a.byteCount);
-    const report = { version: 2, start: this.start, end: this.now(), messages: this.messages,
+    const report = { version: 3, start: this.start, end: this.now(), messages: this.messages,
       byteCount: this.total, categories: this.categories, poolAllocation: 'equal_per_distinct_pool',
       reasons: this.reasons, reasonAllocation: 'equal_per_distinct_reason',
       topPools: rows.slice(0, 20), otherPoolByteCount: rows.slice(20).reduce((s, p) => s + p.byteCount, 0),
       overflowPoolByteCount: this.overflow, unattributedByteCount: this.unattributed,
-      trackedPools: rows.length, poolLimit: this.limit };
+      trackedPools: rows.length, poolLimit: this.limit, diagnosticSamples: this.sampleCounts };
     this.log('stream_traffic', report); this.reset();
     return report;
   }

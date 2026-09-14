@@ -59,8 +59,23 @@ test('traffic reason byte shares reconcile without double counting multi-reason 
   t.record(100, { category: 'unparsed_swap', reasons: ['unsupported_pair', 'missing_vault_balances', 'unsupported_pair'] });
   t.record(20, { category: 'control' });
   const r = t.flush();
-  assert.equal(r.version, 2); assert.equal(r.reasons.unsupported_pair.byteCount, 50);
+  assert.equal(r.version, 3); assert.equal(r.reasons.unsupported_pair.byteCount, 50);
   assert.equal(Object.values(r.reasons).reduce((s, v) => s + v.byteCount, 0), r.byteCount);
+});
+
+test('traffic diagnostics are lazy and bounded per interval and contain verifiable pair evidence', () => {
+  const logs = []; let calls = 0;
+  const t = new Traffic((type, r) => logs.push({ type, ...r }));
+  for (let i = 0; i < 100; i++) t.record(10, { reasons: ['unsupported_pair'], diagnostic: () => { calls++; return { signature: 'public' }; } });
+  assert.equal(calls, 3); assert.equal(logs.length, 3);
+  assert.equal(t.flush().byteCount, 1000);
+  t.record(10, { reasons: ['unsupported_pair'], diagnostic: () => { calls++; return {}; } });
+  assert.equal(calls, 4);
+  const f = fixture(); let info;
+  f.transaction.transaction.message.instructions[0].accounts[4] = f.mint;
+  parseSwaps(f, null, null, r => { info = r; });
+  assert.equal(info.diagnostic().pumpInstructions[0].accounts[4], f.mint);
+  assert.ok(info.diagnostic().programs.length <= 16);
 });
 
 test('archive report includes telemetry and excludes linked context', async () => {
@@ -84,8 +99,8 @@ test('websocket telemetry accounts every message including stale and malformed m
   const Stream = require('../src/stream');
   const stream = new Stream({ wsUrl: `ws://127.0.0.1:${server.address().port}`, maxBytesPerDay: 0 }, { data, log: (type, r) => logs.push({ type, ...r }) });
   const packets = [JSON.stringify({ id: 1, result: 1 }), '{bad',
-    JSON.stringify({ method: 'transactionNotification', params: { result: { slot: 100 } } }),
-    JSON.stringify({ method: 'transactionNotification', params: { result: { slot: 1 } } })];
+    JSON.stringify({ method: 'transactionNotification', params: { subscription: 1, result: { slot: 100 } } }),
+    JSON.stringify({ method: 'transactionNotification', params: { subscription: 1, result: { slot: 1 } } })];
   server.on('connection', ws => ws.once('message', () => packets.forEach(p => ws.send(p))));
   stream.on('transaction', tx => { tx.traffic = { category: 'parsed_sell', pools: ['p'] }; });
   try {

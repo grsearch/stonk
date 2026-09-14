@@ -18,6 +18,7 @@ async function inspect(directory) {
   if (await digest(file) !== summary.sha256 || fs.statSync(file).size !== summary.bytes) throw new Error('Archive checksum/size mismatch');
   const counts = {}, samples = new Map(), outcomes = new Map(); let lines = 0, bytes = 0, first = null, footer = null;
   const audit = { windowCounts: {}, coverageGapReasons: {}, featureReasons: {}, policies: {}, paper: { closed: 0, wins: 0, losses: 0, flat: 0, missingPnl: 0, grossPnlSol: 0 }, shadowHealth: { observations: 0, maxQueueDepth: 0, maxDroppedPerSession: 0, maxHistoryEvictionsPerSession: 0 } };
+  audit.earlyExitAssessments = { count: 0, byStatus: {}, byReason: {}, note: 'Assessment results are not realized exits; pair exit_comparison and baseline by id. not_failed does not mean profitable.' };
   const recoveryResults = new Map();
   const researchRecovery = new Map();
   const entryComparisons = new Map();
@@ -38,6 +39,11 @@ async function inspect(directory) {
       if (row.dataset === 'summary') footer = r;
       const at = r.at ?? Date.parse(r.time), inside = at >= Date.parse(summary.window.start) && at < Date.parse(summary.window.endExclusive);
       if (inside) {
+        if (row.dataset === 'shadow' && r.type === 'early_exit_assessment') {
+          audit.earlyExitAssessments.count++;
+          inc(audit.earlyExitAssessments.byStatus, r.status || 'unknown');
+          inc(audit.earlyExitAssessments.byReason, r.reason || 'unknown');
+        }
         const pipeline = audit.migrationPipeline;
         if (row.dataset === 'trading' && r.type === 'health' && r.migrationDiagnostics && at >= (pipeline.parserAt || 0)) {
           pipeline.parser = r.migrationDiagnostics; pipeline.parserAt = at;

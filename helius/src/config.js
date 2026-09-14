@@ -29,7 +29,10 @@ function readConfig(env = process.env) {
   const senderUrl = endpoint(env.HELIUS_SENDER_URL || 'http://slc-sender.helius-rpc.com/fast', ['http:', 'https:']);
   const swqos = new URL(senderUrl).searchParams.get('swqos_only') === 'true';
   const c = {
-    dryRun, apiKey,
+    dryRun, apiKey, liveFixedStopLoss: false,
+    // Separate live settings so retained .env research thresholds cannot override deployment.
+    liveExitPolicy: dryRun ? null : { version: 1, takeProfit: 10, trailArm: 8, trailDrop: 3, maxHoldMs: 20000 },
+    freshSubscriptions: { version: 1, maxAgeMs: 1800000, exitReserveBelowSol: 50 },
     liveEntryPolicy: { version: 1, reserveExclusiveSol: 100, lossCooldownMs: 600000, waitMs: 500, maxWaiters: 16 },
     calibration: { enabled: calibration, maxBuys: null, lossLimitSol: null, referenceSizeSol: 1 },
     paperPrebuyFilter: bool('PAPER_PREBUY_FILTER', true),
@@ -57,6 +60,7 @@ function readConfig(env = process.env) {
     cleanupIntervalMs: num('CLEANUP_INTERVAL_MS', 60000, 1000, 3600000, true),
     blockhashMs: num('BLOCKHASH_REFRESH_MS', 15000, 1000, 25000, true),
     positionPollMs: num('POSITION_POLL_MS', 15000, 2000, 300000, true),
+    quoteTimeoutMs: num('QUOTE_TIMEOUT_MS', 10000, 1000, 300000, true),
     computeUnits: num('COMPUTE_UNIT_LIMIT', 300000, 100000, 1400000, true),
     priorityLamports: num('PRIORITY_FEE_LAMPORTS', 100000, 1, 100000000, true),
     tipLamports: num('SENDER_TIP_LAMPORTS', swqos ? 5000 : 200000, swqos ? 5000 : 200000, 100000000, true),

@@ -150,3 +150,23 @@ test('CPMM state rejects a base mint absent from the pool even with matching sup
   const adapter = new Adapter(async () => {}, { rate: async () => ({ rate: 1, at: now }) });
   await assert.rejects(adapter.state({ ...p, graduatedAt: now - 1000 }, values, 101), /identity mismatch/);
 });
+
+test('Stonk fresh-pool gate accepts only Stonk graduation and uses converted SOL reserves', () => {
+  const { FreshPools } = require('../src/fresh-pools');
+  const now = Date.now(), store = { data: { positions: {}, pending: {} }, save() {}, log() {} };
+  const fresh = new FreshPools(store, { market: 'stonk' });
+  const event = { ...p, createdAt: now - 1000, migrationAt: now - 1000, source: 'pump_migrate_processed' };
+  fresh.created(event, now); assert.equal(fresh.reason(p, now), 'fresh_pool_not_discovered');
+  fresh.created({ ...event, source: 'stonk_migrate_confirmed' }, now);
+  assert.equal(fresh.reason(p, now), 'fresh_pool_reserve_unknown');
+  fresh.transaction({ keys: [p.quoteVault], slot: 101, meta: { postTokenBalances: [
+    { accountIndex: 0, mint: WSOL, uiTokenAmount: { decimals: 9, amount: '0' } } ] } });
+  assert.equal(fresh.reason(p, now), 'fresh_pool_reserve_unknown');
+  fresh.reserve(p.pool, 50, 101, now); assert.equal(fresh.reason(p, now), null);
+  store.data.positions[p.mint] = { ...p };
+  fresh.reserve(p.pool, 49.999, 102, now); assert.equal(fresh.reason(p, now), 'reserve_below_50');
+  assert.deepEqual(fresh.addresses(now), [p.pool]);
+  delete store.data.positions[p.mint]; assert.deepEqual(fresh.addresses(now), []);
+  const restored = new FreshPools(store, { market: 'stonk' });
+  restored.reserve(p.pool, 100, 103, now); assert.equal(restored.reason(p, now), 'reserve_below_50');
+});

@@ -9,12 +9,14 @@ class Recovery {
   write(r, fields, at) { this.emit({ type: this.type, recoveryVersion: 1, id: r.id, key: r.key, variant: r.arm.name, at,
     quoteSource: this.type === 'state_exit_recovery' ? 'helius_account_state' : 'processed_swap',
     assumptions: { takeProfitPct: r.arm.takeProfit ?? this.c.takeProfit, fixedStopEnabled: !r.arm.noFixedStop,
+      ...(r.arm.earlyFailure ? { earlyFailure: r.arm.earlyFailure } : {}),
       quickTakePct: r.arm.quickTakePct ?? null, quickWindowMs: r.arm.quickWindowMs ?? null,
       quickTakeBasis: r.arm.quickWindowMs ? 'price_from_proxy_entry' : null,
       stopLossPct: r.arm.noFixedStop ? null : this.c.stopLoss, trailArmPct: this.c.trailArm, trailDropPct: this.c.trailDrop,
       maxHoldMs: this.c.maxHoldMs, exitDelayMs: r.arm.delay ?? this.c.exitDelayMs, netTakePct: r.arm.netTake ?? null },
     quoteSlot: r.quoteSlot ?? null, quoteRequestAt: r.quoteRequestAt ?? null,
     selection: r.selection, entryAt: r.entry.at, entryCostSol: r.entry.cost, coverage: 'discontinuous',
+    ...(r.arm.earlyFailure ? { earlyAssessment: r.arm.failureState?.assessment ?? { status: 'unavailable', reason: 'coverage_gap_before_assessment' } } : {}),
     gapReason: r.gapReason, gapAt: r.gapAt, deadlineAt: r.deadlineAt, firstQuoteAt: r.firstQuoteAt,
     minObservedNetPct: r.min, maxObservedNetPct: r.max, ...fields }); }
   add(s, reason, at) {

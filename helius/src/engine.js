@@ -2,7 +2,7 @@
 const normalize = (...args) => require('./parser').normalize(...args);
 const parseSwaps = (...args) => require('./parser').parseSwaps(...args);
 
-const { isSignal, matchesBaseSignal, exitReason } = require('./strategy');
+const { isSignal, matchesBaseSignal, exitReason, exitConfig } = require('./strategy');
 
 function canClose(item, data, now) {
   return item.createdByBot && item.dueAt <= now && !data.positions[item.mint]
@@ -33,36 +33,40 @@ class Engine {
     this.seen.set(result.signature, Date.now()); this.ticks++;
     if (this.seen.size > 20000) this.seen.delete(this.seen.keys().next().value);
     let migrationMatched = false;
-    const parsed = parseSwaps(result, event => this.shadowEvent('poolCreated', event), d => {
+    const parsed = parseSwaps(result, event => { this.stream.fresh?.created(event); this.shadowEvent('poolCreated', event); }, d => {
       if (d.stage === 'migration_matched' && d.count > 0) migrationMatched = true;
       this.migrationDiagnostics[d.stage] = (this.migrationDiagnostics[d.stage] || 0) + d.count;
       if (d.signature && this.migrationDiagnosticSamples < 20) {
         this.migrationDiagnosticSamples++; this.store.log('migration_diagnostic', d);
       }
-    }, info => { result.traffic = migrationMatched ? { ...info, category: 'verified_migration', reasons: ['verified_migration'] } : info; });
+    }, info => { result.traffic = migrationMatched ? { ...info, category: 'verified_migration', reasons: ['verified_migration'] } : info; }, tx => this.stream.fresh?.transaction(tx));
     this.onSwaps(parsed);
   }
   onSwaps(parsed) {
     if (this.stopped) return;
     for (const swap of parsed) {
       this.swaps++;
-      const filter = this.shadowEvent('observe', swap, matchesBaseSignal(swap, this.c), isSignal(swap, this.c));
+      this.stream.fresh?.reserve(swap.pool, swap.liquidity, swap.slot);
+      const admitted = !this.stream.fresh?.reason(swap);
+      const filter = this.shadowEvent('observe', swap, admitted && matchesBaseSignal(swap, this.c), admitted && isSignal(swap, this.c));
       const previous = this.lastSlots.get(swap.pool);
       if (previous && swap.slot < previous.slot) continue;
       for (const guard of this.entryGuards.values()) guard.observe(swap);
       this.lastSlots.set(swap.pool, { slot: swap.slot, at: Date.now() });
       if (this.lastSlots.size > 20000) this.lastSlots.delete(this.lastSlots.keys().next().value);
       const p = this.data.positions[swap.mint];
-      if (p && p.pool === swap.pool) {
+      if (p && p.pool === swap.pool && swap.slot >= (p.slot || 0)) {
+        // Detect an elapsed gap before the returning quote resets the stream clock.
+        this.latchQuoteTimeout(p);
         p.lastObservation = { source: 'stream', previousPrice: p.lastPrice, previousPriceAt: p.lastPriceAt,
           eventTime: swap.eventTime, receivedAt: swap.receivedAt, handledAt: Date.now(), slot: swap.slot, signature: swap.signature };
-        p.lastPrice = swap.price; p.lastPriceAt = Date.now(); p.high = Math.max(p.high, swap.price);
+        p.lastPrice = swap.price; p.lastPriceAt = Date.now(); p.lastStreamQuoteAt = Date.now(); p.high = Math.max(p.high, swap.price);
         // Never continue using an ancient signal slot for a later execution RPC.
         Object.assign(p, { slot: swap.slot, virtual: swap.virtual });
-        const reason = exitReason(p, swap.price, this.c);
+        const reason = p.exitRetryReason || exitReason(p, swap.price, this.c);
         if (reason) this.sell(p, reason).catch(e => this.error('sell', e));
       }
-      if (isSignal(swap, this.c)) this.buy(swap, filter).catch(e => this.error('buy', e));
+      if (admitted && isSignal(swap, this.c)) this.buy(swap, filter).catch(e => this.error('buy', e));
     }
   }
   error(stage, err) {
@@ -82,6 +86,7 @@ class Engine {
   }
   async prepareBuy(swap, filter, guard) {
     if (this.c.market === 'stonk' && (!this.c.dryRun || !isSignal(swap, this.c))) return;
+    if (this.stream.fresh?.reason(swap)) return;
     const policyReason = require('./live-entry-policy').reason(this.c, this.data, swap);
     if (policyReason) {
       this.store.log('live_entry_policy', { version: 1, mint: swap.mint, pool: swap.pool, sourceSignature: swap.signature,
@@ -120,6 +125,7 @@ class Engine {
       this.shadowEvent('decision', swap, 'skipped', { reason: policyAfterWait }); return;
     }
     const now = Date.now();
+    if (this.stream.fresh?.reason(swap, now)) return;
     const reason = this.calibration.reason() || (this.stopped ? 'stopped' : this.busy ? 'wallet_busy' : this.reconciling ? 'reconciling'
       : this.pending() ? 'pending_transaction' : this.exitDue() ? 'exit_priority' : !this.stream.connected ? 'stream_disconnected'
         : this.stream.budgetExceeded() ? 'stream_budget' : this.data.positions[swap.mint] ? 'already_held'
@@ -145,6 +151,7 @@ class Engine {
         this.shadowEvent('decision', swap, 'paper_buy'); return;
       }
       const built = await this.executor.buildSwap('buy', swap);
+      if (this.stream.fresh?.reason(swap)) return;
       if (guard && rejectGuard(guard.check(built.quoteStatePrice, 'rpc_state', built.quoteStateSlot))) return;
       if (this.stopped || !this.stream.connected || !isSignal(swap, this.c)) {
         this.store.log('signal_expired_before_send', { mint: swap.mint });
@@ -192,8 +199,10 @@ class Engine {
   async sell(p, reason) {
     if (this.c.market === 'stonk' && !this.c.dryRun) throw new Error('Stonk live trading is disabled');
     if (this.c.market === 'stonk' && Date.now() >= p.graduatedAt + 1800000) { this.expirePool(p.pool); return; }
+    if (!this.c.dryRun && !p.exitRetryReason) { p.exitRetryReason = reason; this.store.save(); }
+    reason = p.exitRetryReason || reason;
     p.exitDiagnostic ||= { version: 1, firstTriggerAt: Date.now(), reason, triggerPrice: p.lastPrice,
-      observation: p.lastObservation || { source: 'timer_or_legacy', priceAt: p.lastPriceAt },
+      observation: p.lastObservation || { source: 'timer_or_legacy', priceAt: p.lastPriceAt }, quoteTimeout: p.quoteTimeout || null,
       blockedAttempts: 0 };
     if (this.stopped || this.busy || this.reconciling || this.pending() || (p.retryAfter || 0) > Date.now()) { p.exitDiagnostic.blockedAttempts++; return; }
     this.busy = true;
@@ -315,7 +324,7 @@ class Engine {
       const entryPrice = entrySol / Number(acquired);
       actual = { entrySol, rawAcquired: acquired.toString(), quoteSol: ownSwap.quoteSol };
       this.data.positions[p.mint] = { ...p.swap, rawAmount: acquired.toString(), ata: p.ata, createdByBot: p.createdByBot,
-        entrySol, entryPrice, high: entryPrice, lastPrice: ownSwap.price, lastPriceAt: Date.now(), openedAt: Date.now(), buySignature: p.signature };
+        entrySol, entryPrice, high: entryPrice, lastPrice: ownSwap.price, lastPriceAt: Date.now(), lastStreamQuoteAt: Date.now(), openedAt: Date.now(), buySignature: p.signature };
       delete this.data.cleanup[p.mint];
     } else {
       const position = this.data.positions[p.mint];
@@ -388,7 +397,8 @@ class Engine {
         receivedAt: Date.now(), slot: response.context.slot };
       p.lastPrice = Number(q.amount + BigInt(p.virtual || '0')) / Number(b.amount) / 1e9;
       p.lastPriceAt = Date.now(); p.high = Math.max(p.high, p.lastPrice); p.slot = response.context.slot;
-      const reason = exitReason(p, p.lastPrice, this.c);
+      this.latchQuoteTimeout(p);
+      const reason = p.exitRetryReason || exitReason(p, p.lastPrice, this.c);
       if (reason) await this.sell(p, reason);
     }
   }
@@ -396,13 +406,15 @@ class Engine {
     if (this.stopped || this.ticking) return;
     this.ticking = true;
     try {
+      // Persist all due intents before any RPC or pending transaction can block us.
+      for (const p of Object.values(this.data.positions)) this.latchQuoteTimeout(p);
       await this.reconcile();
       // Timeout exits must work even if market streaming disconnects or hits its budget.
       for (const p of Object.values(this.data.positions)) {
         if (this.c.market === 'stonk' && Date.now() >= p.graduatedAt + 1800000) { this.expirePool(p.pool); continue; }
         const fresh = Date.now() - p.lastPriceAt <= Math.max(5000, this.c.positionPollMs * 2);
         const reason = p.exitRetryReason || (fresh ? exitReason(p, p.lastPrice, this.c)
-          : Date.now() - p.openedAt >= this.c.maxHoldMs ? 'max_hold' : null);
+          : Date.now() - p.openedAt >= exitConfig(this.c).maxHoldMs ? 'max_hold' : null);
         if (reason) await this.sell(p, reason);
       }
       if (Date.now() - this.lastPoll >= this.c.positionPollMs) { this.lastPoll = Date.now(); await this.pollPositions(); }
@@ -417,6 +429,19 @@ class Engine {
       delete this.data.positions[p.mint]; this.store.save();
     }
     this.shadowEvent('poolExpired', pool, Date.now());
+  }
+  latchQuoteTimeout(p, now = Date.now()) {
+    if (this.c.dryRun || !this.c.quoteTimeoutMs || p.exitRetryReason) return;
+    // Legacy positions start from their original opening time, never a poll/restart.
+    const last = p.lastStreamQuoteAt ?? p.openedAt;
+    if (!Number.isFinite(last) || now - last < this.c.quoteTimeoutMs) return;
+    const fresh = now - p.lastPriceAt <= Math.max(5000, this.c.positionPollMs * 2);
+    const reason = p.exitDiagnostic?.reason || (fresh ? exitReason(p, p.lastPrice, this.c, now)
+      : now - p.openedAt >= exitConfig(this.c).maxHoldMs ? 'max_hold' : null) || 'quote_timeout';
+    p.exitRetryReason = reason;
+    p.quoteTimeout = { version: 1, detectedAt: now, lastStreamQuoteAt: last, gapMs: now - last, thresholdMs: this.c.quoteTimeoutMs };
+    this.store.save();
+    this.store.log('exit_triggered', { mint: p.mint, pool: p.pool, reason, ...p.quoteTimeout });
   }
   report() {
     const now = Date.now();

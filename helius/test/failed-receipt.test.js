@@ -37,7 +37,7 @@ for (const side of ['buy', 'sell', 'close']) test(`confirmed failed ${side} clea
 });
 for (const reason of ['stop_loss', 'max_hold']) test(`failed pending transaction no longer blocks another position's ${reason}`, async () => {
   const { engine, store, executor } = setup(); let sent = false;
-  store.data.positions.other = { mint: 'other', pool: key(9), rawAmount: '1', entryPrice: 1, high: 1,
+  store.data.positions.other = { mint: 'other', pool: key(9), rawAmount: '1', entryPrice: 1, high: 1, exitRetryReason: reason,
     lastPrice: reason === 'stop_loss' ? .0181 : 1, lastPriceAt: Date.now(), openedAt: Date.now() - (reason === 'max_hold' ? 2100000 : 60000) };
   executor.buildSwap = async () => ({ signature: 'exit', serialized: 'unused' });
   executor.submit = async () => { sent = true; };

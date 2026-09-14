@@ -13,7 +13,7 @@ class ShadowClient {
     if (!this.enabled) return;
     this.stateQuotes = stateQuotes || new (require('./state-quotes').StateQuotes)(c);
     // Never serialize the wallet secret or the API URL/key into a learning event or workerData.
-    const config = { ...c.shadow, market: c.market, calibration: c.calibration, sizeSol: c.sizeSol, takeProfit: c.takeProfit, stopLoss: c.stopLoss,
+    const config = { ...c.shadow, market: c.market, freshSubscriptions: c.freshSubscriptions, calibration: c.calibration, sizeSol: c.sizeSol, takeProfit: c.takeProfit, stopLoss: c.stopLoss,
       trailArm: c.trailArm, trailDrop: c.trailDrop, maxHoldMs: c.maxHoldMs,
       minSellSol: c.minSellSol, minImpact: c.minImpact, maxImpact: c.maxImpact, minLiquidity: c.minLiquidity,
       maxSourceLagMs: c.maxSignalAgeMs + 1000,

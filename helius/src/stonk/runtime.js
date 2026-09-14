@@ -9,6 +9,7 @@ const { Adapter } = require('./adapter');
 const { Valuation } = require('./valuation');
 const { publicKey } = require('./accounts');
 const { active } = require('./protocol');
+const { FreshPools } = require('../fresh-pools');
 // Deliberately contains no signer, wallet, Sender or transaction construction implementation.
 class PaperExecutor {
   constructor() { this.rpcCalls = 0; }
@@ -22,13 +23,15 @@ class Runtime {
   constructor(c, { monitorOptions = {}, workerFactory, store } = {}) {
     if (c.market !== 'stonk' || c.dryRun !== true || !c.shadow.enabled || c.calibration.enabled) throw Error('Stonk requires paper and Shadow');
     this.c = c; this.store = store || new Store(c.stateFile, 'paper', 'stonk-paper'); this.executor = new PaperExecutor();
+    this.fresh = new FreshPools(this.store, { market: 'stonk' });
     this.monitor = new Monitor(c.stonk, { ...monitorOptions,
+      shouldSubscribe: pool => this.fresh.addresses().includes(pool),
       onPool: p => this.pool(p), onSwap: (s, at) => this.swap(s, at), onExpired: pool => { this.engine.expirePool(pool); this.adapter.cache.delete(pool); },
       onConnection: connected => { this.stream.connected = connected; this.shadow.connection(connected); },
       onGap: reason => this.shadow.enqueue({ type: 'gap', reason, at: Date.now() }) });
     const rpc = async (...args) => { this.executor.rpcCalls++; return this.monitor.rpc(...args); };
     this.adapter = new Adapter(rpc, new Valuation(rpc));
-    this.stream = { connected: false, budgetExceeded: () => this.monitor.dayUsage().bytes >= c.stonk.maxBytes };
+    this.stream = { fresh: this.fresh, connected: false, budgetExceeded: () => this.monitor.dayUsage().bytes >= c.stonk.maxBytes };
     this.stateQuotes = new StateQuotes(c, { keys: s => this.adapter.keys(s),
       validate: s => { if (!active(s, Date.now())) throw Error('Graduation window ended'); for (const key of this.adapter.keys(s)) publicKey(key); },
       decode: (s, values, slot) => this.adapter.state(s, values, slot),
@@ -39,12 +42,18 @@ class Runtime {
     this.preparing = new Map();
   }
   pool(p) {
-    this.shadow.poolCreated({ ...p, source: 'stonk_migrate_confirmed', createdAt: p.graduatedAt, migrationAt: p.graduatedAt, observedAt: Date.now() });
+    const event = { ...p, source: 'stonk_migrate_confirmed', createdAt: p.graduatedAt, migrationAt: p.graduatedAt, observedAt: Date.now() };
+    this.fresh.created(event);
+    this.shadow.poolCreated(event);
+    this.monitor.syncSubscriptions();
     this.warm(p);
   }
   warm(p) {
     if (this.preparing.has(p.pool)) return;
-    const task = this.adapter.prepare(p).catch(() => this.store.log('stonk_valuation_unavailable', { pool: p.pool, quoteMint: p.quoteMint,
+    const task = this.adapter.prepare(p).then(q => {
+      this.fresh.reserve(p.pool, q.liquidity, q.slot);
+      this.monitor.syncSubscriptions();
+    }).catch(() => this.store.log('stonk_valuation_unavailable', { pool: p.pool, quoteMint: p.quoteMint,
       reason: 'no_verified_pool_metadata_or_fresh_onchain_fx' })).finally(() => this.preparing.delete(p.pool));
     this.preparing.set(p.pool, task);
   }
@@ -68,10 +77,14 @@ class Runtime {
     this.monitor.start();
     this.tick = setInterval(() => this.engine.tick(), 1000);
     this.reportTimer = setInterval(() => this.report(), 60000);
-    this.warmTimer = setInterval(() => { for (const p of this.monitor.pools.values()) this.warm(p); }, 10000);
+    this.warmTimer = setInterval(() => {
+      const subscribed = new Set(this.fresh.addresses());
+      for (const p of this.monitor.pools.values()) if (subscribed.has(p.pool)) this.warm(p);
+    }, 10000);
     this.report();
   }
   report() {
+    this.fresh.prune();
     this.executor.rpcCalls = this.monitor.totalRpc;
     this.store.data.streamDays = Object.fromEntries(Object.entries(this.monitor.usage).map(([day, usage]) => [day, usage.bytes]));
     this.engine.report();

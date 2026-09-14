@@ -257,7 +257,7 @@ test('state recovery preserves all variants, ignores pre-deadline snapshots and 
   const events = [], s = sample(), x = new ExitComparisons(config, () => {});
   x.observe(s, { price: 1 }, 1, 500); const original = JSON.stringify(s);
   const r = new Recovery(config, e => events.push(e), s => s.net, 'state_exit_recovery'); r.add(s, 'pool_observation_gap', 11000);
-  assert.equal(r.active.size, 9); assert.equal(JSON.stringify(s), original);
+  assert.equal(r.active.size, 10); assert.equal(JSON.stringify(s), original);
   r.observe({ pool: 'p', slot: 2, price: 1.4, net: 1.3, requestAt: 10999 }, 12000); assert.equal(events.filter(e => e.phase === 'first_quote').length, 0);
   r.observe({ pool: 'p', slot: 2, price: 1.4, net: 1.3, requestAt: 12000 }, 12100);
   r.observe({ pool: 'p', slot: 2, price: 1.4, net: 1.3, requestAt: 12200 }, 13000);
