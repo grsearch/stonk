@@ -32,7 +32,7 @@ function selectionValidation(samples, outcomes, window, exitComparisons = new Ma
   let legacySamples = 0, duplicates = 0;
   for (const s of samples.values()) {
     if (!(s.at >= start && s.at < end)) continue;
-    if (!s.selection || ![1, 2, 3, 4, 5, 6, 7].includes(s.selection.version)) { legacySamples++; continue; }
+    if (!s.selection || ![1, 2, 3, 4, 5, 6, 7, 8].includes(s.selection.version)) { legacySamples++; continue; }
     const key = `${s.runId}:${s.key}`, o = outcomes.get(`${s.id}:strategy_proxy`);
     if (unique.has(key)) {
       duplicates++; const prev = unique.get(key);

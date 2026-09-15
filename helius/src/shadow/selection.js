@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 // Fixed retrospective loss-reduction hypotheses, not a validated profit claim.
-const RULES = Object.freeze({ version: 7, minReboundProbability: 0.6, highReboundProbability: 0.8, maxDrawdownProbability: 0.25, maxLoss25Probability: 0.25, minExpectedNetReturn: 0,
+const RULES = Object.freeze({ version: 8, stonkMigrationAgeExclusion: false, minReboundProbability: 0.6, highReboundProbability: 0.8, maxDrawdownProbability: 0.25, maxLoss25Probability: 0.25, minExpectedNetReturn: 0,
   maxPriorBuyFraction5Exclusive: 0.8, rejectMigrationAgeMinMs: 1800000, rejectMigrationAgeMaxExclusiveMs: 7200000,
   rejectConsecutiveSellsAtLeast: 3, rejectNetSellWindowSeconds: 5,
   unknownHistoryComparison: 'allow_vs_reject_with_unknown_subgroup',
@@ -53,7 +53,7 @@ function selection(experiments, predictions, fresh, rebound, snapshot, age) {
     avoidBuyBurst: ['fresh', 'priorBuyBurst'],
     prebuyBeforeAge: ['fresh', 'priorBuy', 'priorReturn', 'dumpSize', 'consecutivePressure', 'priorBuyBurst'],
     avoidMigrationAge: ['fresh', 'migrationAge'],
-    prebuyCombined: ['fresh', 'priorBuy', 'priorReturn', 'dumpSize', 'consecutivePressure', 'priorBuyBurst', 'migrationAge'],
+    prebuyCombined: ['fresh', 'priorBuy', 'priorReturn', 'dumpSize', 'consecutivePressure', 'priorBuyBurst', ...(age?.definition === 'since_stonk_graduation_migration' ? [] : ['migrationAge'])],
     joint: ['fresh', 'rebound', 'drawdown'], highRebound: ['fresh', 'highRebound'], baseline: ['fresh'], market: ['fresh', 'size', 'flow'], risk: ['fresh', 'risk'], net: ['fresh', 'net'], combined: ['fresh', 'size', 'flow', 'risk', 'net'] })) {
     const rejected = keys.filter(k => checks[k].pass === false), unknown = keys.filter(k => checks[k].pass !== true && checks[k].pass !== false);
     arms[name] = { status: rejected.length ? 'reject' : unknown.length ? 'unknown' : 'pass',

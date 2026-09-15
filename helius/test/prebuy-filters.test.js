@@ -67,7 +67,7 @@ test('strict history comparison exports the missed outcome without turning missi
 test('consecutive sell pressure rejects only the joint condition and preserves legacy observation', () => {
   const s = snapshot(); s.values.consecutiveSells = 3;
   let result = select(s);
-  assert.equal(result.version, 7);
+  assert.equal(result.version, 8);
   assert.equal(result.arms.prebuyCombined.status, 'reject');
   assert.equal(result.arms.prebuyLegacy.status, 'pass');
   assert.equal(result.arms.prebuyCombined.rejected[0].check, 'consecutivePressure');
@@ -156,4 +156,14 @@ test('age rejection retains previous selection outcomes and offline replay agree
   const report = selectionValidation(new Map([['age', sample]]), outcomes, { start: new Date(0).toISOString(), endExclusive: new Date(3000).toISOString() });
   assert.equal(report.groups[0].arms.prebuyBeforeAge.selectedNetSol, -.3);
   assert.equal(report.groups[0].arms.prebuyCombined.pairedDifferenceSol, .3);
+});
+
+test('Stonk entry allows the entire two-hour window without the historical age exclusion', () => {
+ for (const migrationAgeMs of [0,1799999,1800000,3600000,7199999]) {
+  const age={definition:'since_stonk_graduation_migration',source:'stonk_migrate_confirmed',status:'observed_confirmed_not_finalized',migrationAgeMs};
+  const features=snapshot();
+  assert.equal(selection({}, {}, true, null, features, age).arms.prebuyCombined.status,'pass');
+  features.values.sellSol=40;
+  assert.equal(selection({}, {}, true, null, features, age).arms.prebuyCombined.status,'reject');
+ }
 });
