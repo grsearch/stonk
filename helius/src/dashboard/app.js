@@ -15,7 +15,7 @@ function mintCell(row, mint) {
   return c;
 }
 function render(s) {
-  text('mode', s.mode === 'live' ? '实盘' : '模拟交易'); text('connection', { connected: '行情已连接', disconnected: '行情已断开', unknown_or_stale: '状态未知 / 已过期' }[s.status]);
+  text('mode', s.mode === 'live' ? '实盘' : '模拟交易'); text('connection', { connected: '行情已连接', degraded: '已连接 · 覆盖未完整', blocked: '已连接 · 处理受阻', disconnected: '行情已断开', unknown_or_stale: '状态未知 / 已过期' }[s.status]);
   text('updated', `面板读取：${date(s.at)}`); const running = s.runningConfig;
   text('size', `${fmt(running?.sizeSol ?? s.configured.sizeSol)} SOL`);
   text('config-note', running ? `启动记录 · 文件配置 ${fmt(s.configured.sizeSol)} SOL` : '仅文件配置，尚无启动记录确认');

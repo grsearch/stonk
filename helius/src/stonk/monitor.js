@@ -11,8 +11,8 @@ function config(env = process.env) {
   if (new URL(rpcUrl).protocol !== 'https:' || new URL(wsUrl).protocol !== 'wss:') throw Error('HTTPS/WSS required');
   const number = (name, fallback, min, max) => { const n = Number(env[name] ?? fallback); if (!Number.isFinite(n) || n < min || n > max) throw Error(`Invalid ${name}`); return n; };
   return { rpcUrl, wsUrl, dataDir: path.resolve(__dirname, '../..', env.STONK_DATA_DIR || 'data/stonk'),
-    dumpPct: number('STONK_DUMP_PCT', 10, 0.01, 100), maxRpc: number('STONK_MAX_RPC_PER_DAY', 20000, 1, 1e7),
-    maxBytes: number('STONK_MAX_STREAM_BYTES_PER_DAY', 1e9, 1, 1e12), historyPages: number('STONK_HISTORY_PAGES', 10, 1, 100),
+    dumpPct: number('STONK_DUMP_PCT', 10, 0.01, 100), maxRpc: (number('STONK_MAX_RPC_PER_DAY', 0, 0, 1e7) || Infinity),
+    maxBytes: (number('STONK_MAX_STREAM_BYTES_PER_DAY', 0, 0, 1e12) || Infinity), historyPages: number('STONK_HISTORY_PAGES', 10, 1, 100),
     batchHistory: env.STONK_BATCH_HISTORY !== 'false' };
 }
 class Monitor {

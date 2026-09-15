@@ -35,3 +35,9 @@ test('archive inspection distinguishes valid empty export from available trainin
   assert.equal(result.integrity, 'verified'); assert.equal(result.sampleRecords, 0); assert.equal(result.windowRecords, 0);
   fs.appendFileSync(bundle.file, 'corruption'); await assert.rejects(inspect(bundle.folder), /checksum/);
 });
+
+test('persisted startup config survives log truncation and connection does not hide blocked processing',async t=>{
+ const {dir,c}=setup(t),now=Date.now();fs.writeFileSync(c.stateFile,JSON.stringify({mode:'live',positions:{},runtimeStart:{time:new Date(now-5000).toISOString(),strategyConfig:{...c,sizeSol:.1}}}));
+ fs.writeFileSync(c.stateFile+'.jsonl',JSON.stringify({type:'health',time:new Date(now).toISOString(),connected:true,stonk:{rpcBudgetExceeded:true,discoveryComplete:false}})+'\n');
+ const s=await snapshot(c,dir,now);assert.equal(s.runningConfig.sizeSol,.1);assert.equal(s.status,'blocked');assert.ok(!JSON.stringify(s).includes('secret-api'));
+});

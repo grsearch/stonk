@@ -36,12 +36,13 @@ async function snapshot(c, exportDirectory, now = Date.now()) {
   if (logs.truncated) warnings.push('健康图表读取日志末尾 2 MB；24 小时盈亏与分页另行读取完整日志。');
   if (logs.invalid) warnings.push('日志中有无法解析的行。');
   const last = type => logs.rows.findLast(r => r.type === type);
-  const starting = last('starting'), startAt = Date.parse(starting?.time) || 0;
+  const starting = last('starting') || state.runtimeStart, startAt = Date.parse(starting?.time) || 0;
   const current = logs.rows.filter(r => Date.parse(r.time) >= startAt);
   const health = current.findLast(r => r.type === 'health'), shadow = current.findLast(r => r.type === 'shadow_health');
   const healthAgeMs = health ? now - Date.parse(health.time) : null;
   if (health?.stonk?.unvalued > 0 && health.stonk.valued === 0) warnings.push('Stonk 行情已收到，但所有观测均未通过账户／估值检查，不能视为策略正常等待。');
   if (health?.stonk?.discoveryComplete === false) warnings.push('Stonk 毕业历史扫描未完成，当前覆盖可能不完整。');
+  if (health?.stonk?.rpcBudgetExceeded) warnings.push('程序本地 RPC 日预算已耗尽，行情处理受阻。');
   const positions = Object.entries(state.positions || {}).map(([mint, p]) => ({ mint,
     ...pick(p, ['pool', 'rawAmount', 'entrySol', 'entryPrice', 'lastPrice', 'lastPriceAt', 'openedAt', 'buySignature']),
     spotPnlPct: p.entryPrice > 0 && Number.isFinite(p.lastPrice) ? (p.lastPrice / p.entryPrice - 1) * 100 : null }));
@@ -53,7 +54,7 @@ async function snapshot(c, exportDirectory, now = Date.now()) {
     upload = pick(cursor, ['lastSuccessEnd', 'nextEnd']);
   } catch (_) { warnings.push('尚无 COS 上传进度，或上传任务尚未配置。'); }
   return { at: now, mode: state.mode || (c.dryRun ? 'paper' : 'live'), stateUpdatedAt: mtime,
-    status: healthAgeMs === null || healthAgeMs > 120000 ? 'unknown_or_stale' : health.connected ? 'connected' : 'disconnected', healthAgeMs,
+    status: healthAgeMs === null || healthAgeMs > 120000 ? 'unknown_or_stale' : health.connected ? (health.stonk?.rpcBudgetExceeded ? 'blocked' : health.stonk?.discoveryComplete === false ? 'degraded' : 'connected') : 'disconnected', healthAgeMs,
     configured: publicConfig(c), runningConfig: starting?.strategyConfig ? publicConfig(starting.strategyConfig) : null,
     startedAt: startAt || null, health: pick(health, ['time', 'connected', 'transactions', 'parsedSwaps', 'rpcRequests', 'positions', 'pending', 'streamMBToday', 'estimatedStreamCreditsToday', 'stonk']),
     shadow: pick(shadow, ['time', 'status', 'samples', 'outcomes', 'censored', 'active', 'queueDepth', 'dropped', 'model']),

@@ -80,6 +80,8 @@ class Runtime {
   }
   start() {
     for (const p of Object.values(this.store.data.positions)) if (!active(p, Date.now())) this.engine.expirePool(p.pool);
+    this.store.data.runtimeStart = { time: new Date().toISOString(), strategyConfig: publicConfig(this.c) };
+    this.store.save();
     this.store.log('starting', { mode: this.c.dryRun ? 'paper' : 'live', market: 'stonk', liveExecution: this.c.dryRun ? 'disabled' : 'raydium_atomic', strategyConfig: publicConfig(this.c) });
     this.monitor.start();
     this.tick = setInterval(() => this.engine.tick(), 1000);
@@ -93,7 +95,7 @@ class Runtime {
   report() {
     this.fresh.prune();
     this.stream.stonkHealth = { ...this.coverage, discoveryComplete: this.monitor.health.discoveryComplete,
-      discoveryError: this.monitor.health.discoveryError, processingErrors: this.monitor.stats.processingErrors || 0 };
+      discoveryError: this.monitor.health.discoveryError, rpcBudgetExceeded: this.monitor.dayUsage().rpc >= this.c.stonk.maxRpc, processingErrors: this.monitor.stats.processingErrors || 0 };
     this.executor.rpcCalls = this.monitor.totalRpc;
     this.store.data.streamDays = Object.fromEntries(Object.entries(this.monitor.usage).map(([day, usage]) => [day, usage.bytes]));
     this.engine.report();

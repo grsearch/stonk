@@ -229,3 +229,9 @@ test('disabled live policy shares the requested sell threshold, loss cooldown an
  const data={};recordLoss(live,data,{mint:'m',side:'sell',status:'confirmed',netPnlSol:-.01,receiptObservedAt:at});
  assert.equal(reason(live,data,s,at+59999),'live_loss_cooldown');assert.equal(reason(live,data,s,at+60000),null);assert.equal(c.dryRun,true);
 });
+
+test('failed pool preparation is coalesced and briefly cached, then retried',async()=>{
+ let now=Date.now(),calls=0;const a=new Adapter(async()=>{calls++;throw Error('RPC HTTP 429')},{},()=>now);const s={...p,graduatedAt:now-1000};
+ await Promise.allSettled([a.prepare(s),a.prepare(s)]);assert.equal(calls,1);await assert.rejects(a.prepare(s));assert.equal(calls,1);
+ now+=5000;await assert.rejects(a.prepare(s));assert.equal(calls,2);
+});

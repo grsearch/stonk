@@ -217,3 +217,9 @@ test('JSON-parsed version 1 migrations remain verifiable and history requests ac
  const requests=[];const m=monitor(t,{rpc:async(method,params)=>{requests.push(params);return {data:[v1],paginationToken:null}}});m.config.batchHistory=true;
  await m.discover();assert.ok(m.pools.has('pool'));assert.ok(requests.every(p=>p[1].maxSupportedTransactionVersion===1));
 });
+
+test('zero daily budgets mean unlimited without resetting usage',async t=>{
+ const m=monitor(t,{rpc:async()=> 'ok'});m.config.maxRpc=config({HELIUS_API_KEY:'test',STONK_MAX_RPC_PER_DAY:'0'}).maxRpc;
+ m.dayUsage().rpc=20000;assert.equal(await m.rpc('getBlockTime',[1]),'ok');assert.equal(m.dayUsage().rpc,20001);
+ assert.equal(config({HELIUS_API_KEY:'test',STONK_MAX_STREAM_BYTES_PER_DAY:'0'}).maxBytes,Infinity);
+});

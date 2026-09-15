@@ -3,7 +3,7 @@ const { cpmm, mint, vault } = require('./accounts');
 const { active } = require('./protocol');
 const { afterTransfer } = require('./proxy-quotes');
 class Adapter {
-  constructor(rpc, valuation, now = Date.now) { this.rpc = rpc; this.valuation = valuation; this.now = now; this.cache = new Map(); }
+  constructor(rpc, valuation, now = Date.now) { this.rpc = rpc; this.valuation = valuation; this.now = now; this.cache = new Map(); this.prepares = new Map(); this.prepareFailures = new Map(); }
   keys(s) { return [s.pool, s.mint, s.quoteMint, s.baseVault, s.quoteVault]; }
   async state(s, values, slot) {
     if (!active(s, this.now())) throw Error('Graduation window ended');
@@ -24,6 +24,18 @@ class Adapter {
     return this.convert({ ...s, ...metadata, postBase: postBase.toString(), postQuoteRaw: postQuote.toString(), slot }, fx);
   }
   async prepare(s) {
+    if (!active(s, this.now())) throw Error('Graduation window ended');
+    const failure = this.prepareFailures.get(s.pool);
+    if (failure && this.now() - failure.at < 5000) throw failure.error;
+    const key = s.pool + ':' + s.slot;
+    if (this.prepares.has(key)) return this.prepares.get(key);
+    const task = this.readState(s); this.prepares.set(key, task);
+    try { const result = await task; this.prepareFailures.delete(s.pool); return result; }
+    catch (error) { this.prepareFailures.set(s.pool, { at: this.now(), error });
+      if (this.prepareFailures.size > 1000) this.prepareFailures.delete(this.prepareFailures.keys().next().value); throw error; }
+    finally { this.prepares.delete(key); }
+  }
+  async readState(s) {
     const r = await this.rpc('getMultipleAccounts', [this.keys(s), { encoding: 'base64', commitment: 'confirmed', minContextSlot: s.slot }]);
     if (!Number.isSafeInteger(r.context?.slot) || r.context.slot < s.slot) throw Error('Stale account state');
     return this.state(s, r.value, r.context.slot);
