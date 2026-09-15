@@ -211,3 +211,9 @@ test('recent block-time unavailability falls back to the same confirmed transact
   const bad=monitor(t,{rpc:async(method)=>{if(method==='getBlockTime')throw Error('RPC code -32004');const tx=raw();tx.slot=2;tx.transaction.signatures=['recent'];return tx;}});
   await assert.rejects(bad.process(raw(undefined,null),'recent'),/Missing chain/);assert.equal(bad.pools.size,0);
 });
+
+test('JSON-parsed version 1 migrations remain verifiable and history requests accept version 1', async t=>{
+ const v1=raw();v1.version=1;v1.transaction.message.transactionConfig={};v1.transaction.signatures=['v1'];
+ const requests=[];const m=monitor(t,{rpc:async(method,params)=>{requests.push(params);return {data:[v1],paginationToken:null}}});m.config.batchHistory=true;
+ await m.discover();assert.ok(m.pools.has('pool'));assert.ok(requests.every(p=>p[1].maxSupportedTransactionVersion===1));
+});

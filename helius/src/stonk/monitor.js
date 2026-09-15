@@ -77,7 +77,7 @@ class Monitor {
         catch (e) {
           if (e.message !== 'RPC code -32004') throw e;
           // Recent confirmed slots may not yet be available from the block-time endpoint.
-          const confirmed = await this.rpc('getTransaction', [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }]);
+          const confirmed = await this.rpc('getTransaction', [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 1 }]);
           if (confirmed?.slot !== tx.slot || confirmed?.meta?.err !== null ||
               !confirmed.transaction?.signatures?.includes(signature)) throw Error('Missing chain block time');
           tx.blockTime = confirmed.blockTime;
@@ -124,7 +124,7 @@ class Monitor {
         for (const row of rows.reverse()) {
           if (this.stopping) return;
           if (this.seen.has(row.signature)) continue;
-          const tx = await this.rpc('getTransaction', [row.signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }]);
+          const tx = await this.rpc('getTransaction', [row.signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 1 }]);
           if (!tx) throw Error('History transaction temporarily unavailable');
           await this.process(tx, row.signature, true);
         }
@@ -148,7 +148,7 @@ class Monitor {
         for (let page = 0; page < this.config.historyPages; page++) {
           if (this.stopping) return;
           const r = await this.rpc('getTransactionsForAddress', [platform, { transactionDetails: 'full', limit: 100,
-            sortOrder: 'desc', encoding: 'jsonParsed', maxSupportedTransactionVersion: 0,
+            sortOrder: 'desc', encoding: 'jsonParsed', maxSupportedTransactionVersion: 1,
             filters: { status: 'succeeded', blockTime: { gte: scan.start, lte: scan.end } },
             ...(scan.token ? { paginationToken: scan.token } : {}) }]);
           if (!Array.isArray(r?.data) || (r.paginationToken != null && typeof r.paginationToken !== 'string')) throw Error('Invalid history response');
@@ -192,7 +192,7 @@ class Monitor {
       if (this.subscriptions.has(key) || [...this.pending.values()].some(p => p.key === key && p.method === 'transactionSubscribe')) continue;
       this.send('transactionSubscribe', [{ vote: false, failed: false, accountInclude: key === 'discovery' ? PLATFORMS : [key],
         ...(key === 'discovery' ? { accountRequired: [LAUNCHLAB, CPMM] } : {}) },
-        { commitment: 'confirmed', encoding: 'jsonParsed', transactionDetails: 'full', showRewards: false, maxSupportedTransactionVersion: 0 }], key);
+        { commitment: 'confirmed', encoding: 'jsonParsed', transactionDetails: 'full', showRewards: false, maxSupportedTransactionVersion: 1 }], key);
     }
   }
   connect() {

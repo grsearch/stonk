@@ -51,3 +51,5 @@
 - SOL 直接 CPMM 池 DREQ7fyveGL7dXxB7EsjgSDmRNceuD5W7J4hUgznZbFM、经 AMC 中转的 CPMM 池 4ZnqNTaxFXTSn5ZtFEr32THEtAPG3NoqvqQC4YBnkb8k 均通过完整往返链上模拟；买入模拟约 0.6 秒，非实际成交速度。
 - 验证准备仅创建两个空 ATA（无买卖），交易 5woQHZwuxsqNTaU4hiT4uj3JwRFTLEV2GE7Hxkrwfmabdu8ZHQ4dwxxnn6gvsLz8vcEjoxX5sBFKwk3oyS9x7CNU 已确认。
 - 北京时间 2026-09-15 10:49 启用实盘，备份目录 /opt/stonk-monitor/backups/live-20260915T024925Z。通过模拟不保证未来流动性、发行者权限、报价可用性或每次退出成功；失败持仓持续保留。
+
+- 上线后另修复 Helius -32015：毕业历史和 JSON 行情读取接受版本 1，实际发送仍为 V0。读取格式已用真实响应核对；本机和服务器最终 289/289 测试通过。备份 /opt/stonk-monitor/backups/json-v1-20260915T025538Z。
