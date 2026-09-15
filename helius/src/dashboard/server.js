@@ -40,6 +40,8 @@ async function snapshot(c, exportDirectory, now = Date.now()) {
   const current = logs.rows.filter(r => Date.parse(r.time) >= startAt);
   const health = current.findLast(r => r.type === 'health'), shadow = current.findLast(r => r.type === 'shadow_health');
   const healthAgeMs = health ? now - Date.parse(health.time) : null;
+  if (health?.stonk?.unvalued > 0 && health.stonk.valued === 0) warnings.push('Stonk 行情已收到，但所有观测均未通过账户／估值检查，不能视为策略正常等待。');
+  if (health?.stonk?.discoveryComplete === false) warnings.push('Stonk 毕业历史扫描未完成，当前覆盖可能不完整。');
   const positions = Object.entries(state.positions || {}).map(([mint, p]) => ({ mint,
     ...pick(p, ['pool', 'rawAmount', 'entrySol', 'entryPrice', 'lastPrice', 'lastPriceAt', 'openedAt', 'buySignature']),
     spotPnlPct: p.entryPrice > 0 && Number.isFinite(p.lastPrice) ? (p.lastPrice / p.entryPrice - 1) * 100 : null }));
@@ -53,7 +55,7 @@ async function snapshot(c, exportDirectory, now = Date.now()) {
   return { at: now, mode: state.mode || (c.dryRun ? 'paper' : 'live'), stateUpdatedAt: mtime,
     status: healthAgeMs === null || healthAgeMs > 120000 ? 'unknown_or_stale' : health.connected ? 'connected' : 'disconnected', healthAgeMs,
     configured: publicConfig(c), runningConfig: starting?.strategyConfig ? publicConfig(starting.strategyConfig) : null,
-    startedAt: startAt || null, health: pick(health, ['time', 'connected', 'transactions', 'parsedSwaps', 'rpcRequests', 'positions', 'pending', 'streamMBToday', 'estimatedStreamCreditsToday']),
+    startedAt: startAt || null, health: pick(health, ['time', 'connected', 'transactions', 'parsedSwaps', 'rpcRequests', 'positions', 'pending', 'streamMBToday', 'estimatedStreamCreditsToday', 'stonk']),
     shadow: pick(shadow, ['time', 'status', 'samples', 'outcomes', 'censored', 'active', 'queueDepth', 'dropped', 'model']),
     positions, pending: Object.values(state.pending || {}).map(p => pick(p, ['side', 'mint', 'signature', 'submittedAt'])),
     cleanup: Object.values(state.cleanup || {}).map(p => pick(p, ['mint', 'soldAt', 'dueAt'])), trades, upload, warnings,

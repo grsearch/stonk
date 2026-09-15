@@ -7,7 +7,7 @@ class Adapter {
   keys(s) { return [s.pool, s.mint, s.quoteMint, s.baseVault, s.quoteVault]; }
   async state(s, values, slot) {
     if (!active(s, this.now())) throw Error('Graduation window ended');
-    const pool = cpmm(values[0]), base = mint(values[1]), quote = mint(values[2]);
+    const pool = cpmm(values[0]), base = mint(values[1]), quote = mint(values[2], { quoteAsset: true });
     const order = pool.mint0 === s.mint;
     if ((order ? pool.mint0 : pool.mint1) !== s.mint || (order ? pool.mint1 : pool.mint0) !== s.quoteMint || (order ? pool.vault0 : pool.vault1) !== s.baseVault ||
         (order ? pool.vault1 : pool.vault0) !== s.quoteVault || (order ? pool.program0 : pool.program1) !== base.program ||
@@ -18,7 +18,8 @@ class Adapter {
     const fx = await this.valuation.rate(s.quoteMint);
     if (!active(s, this.now())) throw Error('Graduation window ended');
     const metadata = { at: this.now(), slot, feeBase: (order ? pool.fees0 : pool.fees1).toString(), feeQuote: (order ? pool.fees1 : pool.fees0).toString(),
-      baseDecimals: base.decimals, quoteDecimals: quote.decimals, tokenProgram: base.program, transferFees: { base: base.fees, quote: quote.fees } };
+      baseDecimals: base.decimals, quoteDecimals: quote.decimals, tokenProgram: base.program, transferFees: { base: base.fees, quote: quote.fees },
+      quoteAssetControls: quote.controls, quoteAccounting: quote.accounting };
     this.cache.set(s.pool, metadata);
     return this.convert({ ...s, ...metadata, postBase: postBase.toString(), postQuoteRaw: postQuote.toString(), slot }, fx);
   }

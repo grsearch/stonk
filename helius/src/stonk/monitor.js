@@ -1,7 +1,8 @@
 'use strict';
 const fs = require('node:fs');
 const path = require('node:path');
-const { PLATFORMS, WINDOW_MS, normalize, migrations, active, swaps } = require('./protocol');
+const { PLATFORMS, LAUNCHLAB, CPMM, WINDOW_MS, normalize, migrations, active, swaps } = require('./protocol');
+const { diagnostic } = require('./diagnostics');
 function config(env = process.env) {
   const key = env.HELIUS_API_KEY;
   const rpcUrl = env.HELIUS_RPC_URL || (key && `https://mainnet.helius-rpc.com/?api-key=${encodeURIComponent(key)}`);
@@ -11,7 +12,8 @@ function config(env = process.env) {
   const number = (name, fallback, min, max) => { const n = Number(env[name] ?? fallback); if (!Number.isFinite(n) || n < min || n > max) throw Error(`Invalid ${name}`); return n; };
   return { rpcUrl, wsUrl, dataDir: path.resolve(__dirname, '../..', env.STONK_DATA_DIR || 'data/stonk'),
     dumpPct: number('STONK_DUMP_PCT', 10, 0.01, 100), maxRpc: number('STONK_MAX_RPC_PER_DAY', 20000, 1, 1e7),
-    maxBytes: number('STONK_MAX_STREAM_BYTES_PER_DAY', 1e9, 1, 1e12), historyPages: number('STONK_HISTORY_PAGES', 10, 1, 100) };
+    maxBytes: number('STONK_MAX_STREAM_BYTES_PER_DAY', 1e9, 1, 1e12), historyPages: number('STONK_HISTORY_PAGES', 10, 1, 100),
+    batchHistory: env.STONK_BATCH_HISTORY !== 'false' };
 }
 class Monitor {
   constructor(config, { rpc, socketFactory, now = Date.now, onPool, onSwap, onExpired, onConnection, onGap, shouldSubscribe = () => true } = {}) {
@@ -22,6 +24,7 @@ class Monitor {
     this.health = { lastDiscoveryAt: null, discoveryComplete: false, discoveryError: null };
     this.callbacks = { onPool, onSwap, onExpired, onConnection, onGap };
     this.shouldSubscribe = shouldSubscribe;
+    this.historyScans = {}; this.historyHeads = {};
     this.totalRpc = 0; this.abort = new AbortController();
   }
   log(type, data = {}) {
@@ -31,7 +34,7 @@ class Monitor {
   }
   save() {
     const state = { version: 1, savedAt: this.now(), mode: this.callbacks.onSwap ? 'stonk-paper-shadow' : 'stonk-monitor-only', windowMs: WINDOW_MS,
-      pools: [...this.pools.values()], cursors: this.cursors, usage: this.usage, stats: this.stats,
+      pools: [...this.pools.values()], cursors: this.cursors, historyScans: this.historyScans, historyHeads: this.historyHeads, usage: this.usage, stats: this.stats,
       health: { ...this.health, streamConnected: this.ws?.readyState === 1 && this.subscriptions.has('discovery'),
         subscribedPools: [...this.subscriptions.keys()].filter(k => k !== 'discovery').length } };
     const file = path.join(this.config.dataDir, 'state.json');
@@ -69,7 +72,17 @@ class Monitor {
     if (!found.length && (discoveryOnly || !relevant)) { this.seen.set(signature, this.now()); return; }
     if (!Number.isSafeInteger(tx.blockTime)) {
       tx.blockTime = this.blockTimes.get(tx.slot);
-      if (!Number.isSafeInteger(tx.blockTime)) tx.blockTime = await this.rpc('getBlockTime', [tx.slot]);
+      if (!Number.isSafeInteger(tx.blockTime)) {
+        try { tx.blockTime = await this.rpc('getBlockTime', [tx.slot]); }
+        catch (e) {
+          if (e.message !== 'RPC code -32004') throw e;
+          // Recent confirmed slots may not yet be available from the block-time endpoint.
+          const confirmed = await this.rpc('getTransaction', [signature, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }]);
+          if (confirmed?.slot !== tx.slot || confirmed?.meta?.err !== null ||
+              !confirmed.transaction?.signatures?.includes(signature)) throw Error('Missing chain block time');
+          tx.blockTime = confirmed.blockTime;
+        }
+      }
     }
     if (!Number.isSafeInteger(tx.blockTime)) throw Error('Missing chain block time');
     this.blockTimes.set(tx.slot, tx.blockTime);
@@ -90,6 +103,7 @@ class Monitor {
     this.seen.set(signature, this.now());
   }
   async discover() {
+    if (this.config.batchHistory) return this.discoverBatch();
     if (this.discovering) return;
     this.discovering = true;
     let completeScan = true;
@@ -120,11 +134,46 @@ class Monitor {
       this.health = { lastDiscoveryAt: this.now(), discoveryComplete: completeScan, discoveryError: completeScan ? null : 'history_page_limit' };
     } finally { this.discovering = false; this.save(); }
   }
+  async discoverBatch() {
+    if (this.discovering) return;
+    this.discovering = true;
+    let complete = true;
+    try {
+      for (const platform of PLATFORMS) {
+        let scan = this.historyScans[platform];
+        const end = Math.floor(this.now() / 1000) - 2;
+        if (!scan) scan = this.historyScans[platform] = {
+          start: Math.max(end - WINDOW_MS / 1000, (this.historyHeads[platform] ?? -Infinity) - 2), end, token: null };
+        let finished = false;
+        for (let page = 0; page < this.config.historyPages; page++) {
+          if (this.stopping) return;
+          const r = await this.rpc('getTransactionsForAddress', [platform, { transactionDetails: 'full', limit: 100,
+            sortOrder: 'desc', encoding: 'jsonParsed', maxSupportedTransactionVersion: 0,
+            filters: { status: 'succeeded', blockTime: { gte: scan.start, lte: scan.end } },
+            ...(scan.token ? { paginationToken: scan.token } : {}) }]);
+          if (!Array.isArray(r?.data) || (r.paginationToken != null && typeof r.paginationToken !== 'string')) throw Error('Invalid history response');
+          for (const tx of [...r.data].reverse()) {
+            const signature = tx.transaction?.signatures?.[0];
+            if (!signature) throw Error('Invalid history transaction');
+            await this.process(tx, signature, true);
+          }
+          if (!r.paginationToken) {
+            this.historyHeads[platform] = scan.end; delete this.historyScans[platform]; finished = true; this.save(); break;
+          }
+          if (r.paginationToken === scan.token) throw Error('History cursor did not advance');
+          scan.token = r.paginationToken; this.save();
+        }
+        if (!finished || end - this.historyHeads[platform] > 60) complete = false;
+      }
+      this.health = { lastDiscoveryAt: this.now(), discoveryComplete: complete, discoveryError: complete ? null : 'history_catching_up' };
+    } finally { this.discovering = false; this.save(); }
+  }
   enqueue(work) {
     this.queued = (this.queued || 0) + 1;
     if (this.queued > 2000) { this.queued--; this.log('stream_gap', { reason: 'processing_queue_full' }); this.callbacks.onGap?.('processing_queue_full'); this.ws?.close(); return; }
-    this.queue = this.queue.then(() => this.stopping ? undefined : work()).catch(() => {
-      this.log('processing_error', { reason: 'RPC or malformed transaction; swap coverage interrupted' });
+    this.queue = this.queue.then(() => this.stopping ? undefined : work()).catch(e => {
+      this.stats.processingErrors = (this.stats.processingErrors || 0) + 1;
+      this.log('processing_error', { stage: 'realtime_transaction', ...diagnostic(e) });
       this.callbacks.onGap?.('transaction_processing_failed');
     })
       .finally(() => { this.queued--; });
@@ -141,7 +190,8 @@ class Monitor {
     }
     for (const key of desired) {
       if (this.subscriptions.has(key) || [...this.pending.values()].some(p => p.key === key && p.method === 'transactionSubscribe')) continue;
-      this.send('transactionSubscribe', [{ vote: false, failed: false, accountInclude: key === 'discovery' ? PLATFORMS : [key] },
+      this.send('transactionSubscribe', [{ vote: false, failed: false, accountInclude: key === 'discovery' ? PLATFORMS : [key],
+        ...(key === 'discovery' ? { accountRequired: [LAUNCHLAB, CPMM] } : {}) },
         { commitment: 'confirmed', encoding: 'jsonParsed', transactionDetails: 'full', showRewards: false, maxSupportedTransactionVersion: 0 }], key);
     }
   }
@@ -193,6 +243,7 @@ class Monitor {
       if (state.version !== 1 || !['stonk-monitor-only', 'stonk-paper-shadow'].includes(state.mode)) throw Error('Incompatible Stonk state');
       this.pools = new Map(state.pools.filter(p => PLATFORMS.includes(p.platform) && active(p, this.now())).map(p => [p.pool, p]));
       this.cursors = state.cursors || {}; this.usage = state.usage || {}; this.stats = state.stats || this.stats;
+      this.historyScans = state.historyScans || {}; this.historyHeads = state.historyHeads || {};
     }
     for (const p of this.pools.values()) this.callbacks.onPool?.(p);
     this.running = true; this.log('starting', { mode: 'stonk-paper-shadow', windowMinutes: 30 }); this.connect();
@@ -214,9 +265,9 @@ class Monitor {
   }
   recover() {
     if (this.discovering) return;
-    this.recoveryWork = this.discover().catch(() => {
+    this.recoveryWork = this.discover().catch(e => {
       this.health.discoveryComplete = false; this.health.discoveryError = 'rpc_or_transaction_unavailable';
-      this.log('discovery_error', { reason: 'RPC budget, network or missing transaction; retry in 60 seconds' }); this.save();
+      this.log('discovery_error', { stage: 'history_discovery', ...diagnostic(e) }); this.save();
     });
   }
 }

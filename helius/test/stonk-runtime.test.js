@@ -77,9 +77,15 @@ test('on-chain FX uses verified CLMM pair and refuses missing markets; WSOL stay
   let reads = 0; const from = key(6); const sorted = [from, WSOL].sort((a,b) => Buffer.compare(decode58(a),decode58(b)));
   const b = Buffer.alloc(1544); discriminator('PoolState').copy(b); decode58(sorted[0]).copy(b,73); decode58(sorted[1]).copy(b,105);
   b[233] = 9; b[234] = 9; b.writeBigUInt64LE(1000000000000n,237); b.writeBigUInt64LE(1n,261); // sqrt price = 2^64
+  decode58(key(8)).copy(b,137); decode58(key(9)).copy(b,169);
+  const v = (m) => { const data = Buffer.alloc(165); decode58(m).copy(data); data[108]=1; data.writeBigUInt64LE(200000000000n,64); return account(data,TOKEN); };
+  const balances=sorted.map(v);
   const a = account(b, CLMM);
-  const fx = new Valuation(async (method, params) => { reads++; return method === 'getProgramAccounts' ? { context: { slot: 1 }, value: params[0] === CLMM ? [{ pubkey: key(7), account: a }] : [] } : { context: { slot: 1 }, value: [a] }; });
+  const fx = new Valuation(async (method, params) => { reads++; return method === 'getProgramAccounts' ? { context: { slot: 1 }, value: params[0] === CLMM ? [{ pubkey: key(7), account: a }] : [] } : { context: { slot: 1 }, value: params[0].length === 2 ? balances : [a] }; });
   assert.equal((await fx.rate(WSOL)).rate,1); assert.equal(reads,0); assert.equal((await fx.rate(from)).rate,1);
+  fx.rates.clear();
+  const thin=Buffer.from(balances[sorted.indexOf(WSOL)].data[0],'base64'); thin.writeBigUInt64LE(99000000000n,64); balances[sorted.indexOf(WSOL)]=account(thin,TOKEN);
+  await assert.rejects(fx.rate(from), /No fresh/);
   const missing = new Valuation(async () => ({ context: { slot: 1 }, value: [] })); await assert.rejects(missing.rate(from), /No fresh/);
 });
 test('original state-quote scheduler reads all five Stonk accounts and returns the CPMM quote', async () => {
@@ -169,4 +175,37 @@ test('Stonk fresh-pool gate accepts only Stonk graduation and uses converted SOL
   delete store.data.positions[p.mint]; assert.deepEqual(fresh.addresses(now), []);
   const restored = new FreshPools(store, { market: 'stonk' });
   restored.reserve(p.pool, 100, 103, now); assert.equal(restored.reason(p, now), 'reserve_below_50');
+});
+
+test('actual SCHH and ANTHROPIC quote mints decode in raw units while base-mint restrictions remain', () => {
+  const fixture = require('./fixtures/stonk-quote-mints.json');
+  for (const account of fixture.accounts) {
+    assert.throws(() => mint(account), /Unsupported mint extension/);
+    const quote = mint(account, { quoteAsset: true });
+    assert.equal(quote.accounting, 'raw_units_not_scaled_ui');
+    assert.equal(quote.executable, false); assert.ok(quote.controls.includes(12)); assert.ok(quote.controls.includes(25));
+    assert.ok(Number.isInteger(quote.decimals));
+  }
+  assert.equal(mint(fixture.accounts[1], { quoteAsset: true }).fees.length, 2);
+});
+
+test('quote parsing still rejects paused, active-hook, truncated and unknown extensions', () => {
+  const fixture = require('./fixtures/stonk-quote-mints.json');
+  const edit = (type, change) => { const a = structuredClone(fixture.accounts[0]); const b = Buffer.from(a.data[0], 'base64');
+    for (let i = 166; i + 4 <= b.length;) { const t = b.readUInt16LE(i), len = b.readUInt16LE(i + 2); if(t === type) { change(b, i); break; } i += 4 + len; }
+    a.data[0] = b.toString('base64'); return a; };
+  assert.throws(() => mint(edit(26, (b,i) => { b[i+4+32]=1; }), { quoteAsset: true }), /paused/);
+  assert.throws(() => mint(edit(14, (b,i) => { b[i+4+32]=1; }), { quoteAsset: true }), /hook/);
+  assert.throws(() => mint(edit(12, (b,i) => b.writeUInt16LE(31,i+2)), { quoteAsset: true }), /Invalid quote mint extension/);
+  assert.throws(() => mint(edit(12, (b,i) => b.writeUInt16LE(999,i)), { quoteAsset: true }), /Unsupported/);
+});
+
+test('failed Raydium estimates retain safe RPC diagnostics and back off repeated ticks', async () => {
+  let at=10000,calls=0; const v=new Valuation(async()=>{calls++;throw Error('RPC HTTP 429')},()=>at);
+  let failure; try { await v.rate(p.quoteMint); } catch(e) { failure=e; }
+  assert.ok(failure.valuationDetails.paths.some(p=>p.errors.some(e=>e.httpStatus===429)));
+  const before=calls; await assert.rejects(v.rate(p.quoteMint)); assert.equal(calls,before);
+  at+=31000; await assert.rejects(v.rate(p.quoteMint)); assert.ok(calls>before);
+  const {diagnostic}=require('../src/stonk/diagnostics');
+  assert.equal(JSON.stringify(diagnostic(Error('https://private/?api-key=secret'))).includes('secret'),false);
 });

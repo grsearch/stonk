@@ -28,7 +28,7 @@ function trade({ sell = true, exactOut = false } = {}) {
 function monitor(t, options = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stonk-test-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
-  const m = new Monitor({ ...config({ HELIUS_API_KEY: 'test' }), dataDir }, { now: () => epoch + 1000, ...options });
+  const m = new Monitor({ ...config({ HELIUS_API_KEY: 'test', STONK_BATCH_HISTORY: 'false' }), dataDir }, { now: () => epoch + 1000, ...options });
   m.logs = []; m.log = (type, data) => m.logs.push({ type, ...data }); return m;
 }
 test('migration requires Stonk config in exact position and LaunchLab program', () => {
@@ -175,4 +175,39 @@ test('Stonk subscriptions obey the reserve gate while retaining a protected posi
   allowed = true; m.syncSubscriptions(); assert.equal(sent.at(-1).method, 'transactionSubscribe');
   m.now = () => epoch + WINDOW_MS; m.expire();
   assert.equal(m.pools.size, 0);
+});
+
+test('batched history resumes its saved page and only advances the watermark after success', async t => {
+  const requests=[];let fail=false;
+  const m=monitor(t,{rpc:async(method,params)=>{
+    assert.equal(method,'getTransactionsForAddress');requests.push(params);
+    if(params[0]===PLATFORMS[1])return {data:[],paginationToken:null};
+    if(fail)throw Error('RPC HTTP 429');
+    if(!params[1].paginationToken)return {data:[],paginationToken:'page2'};
+    return {data:[],paginationToken:null};
+  }});
+  m.config.batchHistory=true;m.config.historyPages=1;
+  await m.discover();assert.equal(m.health.discoveryComplete,false);assert.equal(m.historyScans[PLATFORMS[0]].token,'page2');
+  assert.equal(m.historyHeads[PLATFORMS[0]],undefined);
+  fail=true;await assert.rejects(m.discover());assert.equal(m.historyScans[PLATFORMS[0]].token,'page2');
+  fail=false;await m.discover();assert.equal(m.health.discoveryComplete,true);assert.ok(m.historyHeads[PLATFORMS[0]]);
+  assert.equal(requests[2][1].paginationToken,'page2');assert.equal(requests[0][1].filters.status,'succeeded');
+});
+
+test('batched recovery accepts a real envelope without replaying historical swaps into strategy', async t => {
+  let swaps=0;const tx=raw();tx.transaction.signatures=['batch-migration'];
+  const m=monitor(t,{onSwap:()=>swaps++,rpc:async()=>({data:[tx],paginationToken:null})});
+  m.config.batchHistory=true;await m.discover();
+  assert.equal(m.pools.size,1);assert.equal(swaps,0);
+  const sent=[];m.ws={readyState:1,send:s=>sent.push(JSON.parse(s))};m.syncSubscriptions();
+  assert.deepEqual(sent[0].params[0].accountRequired,[LAUNCHLAB,CPMM]);
+});
+
+test('recent block-time unavailability falls back to the same confirmed transaction without inventing AGE', async t => {
+  const calls=[];
+  const m=monitor(t,{rpc:async(method)=>{calls.push(method);if(method==='getBlockTime')throw Error('RPC code -32004');const tx=raw();tx.transaction.signatures=['recent'];return tx;}});
+  await m.process(raw(undefined,null),'recent');
+  assert.equal(m.pools.get('pool').graduatedAt,epoch);assert.deepEqual(calls,['getBlockTime','getTransaction']);
+  const bad=monitor(t,{rpc:async(method)=>{if(method==='getBlockTime')throw Error('RPC code -32004');const tx=raw();tx.slot=2;tx.transaction.signatures=['recent'];return tx;}});
+  await assert.rejects(bad.process(raw(undefined,null),'recent'),/Missing chain/);assert.equal(bad.pools.size,0);
 });

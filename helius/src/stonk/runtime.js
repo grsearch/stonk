@@ -10,6 +10,7 @@ const { Valuation } = require('./valuation');
 const { publicKey } = require('./accounts');
 const { active } = require('./protocol');
 const { FreshPools } = require('../fresh-pools');
+const { diagnostic } = require('./diagnostics');
 // Deliberately contains no signer, wallet, Sender or transaction construction implementation.
 class PaperExecutor {
   constructor() { this.rpcCalls = 0; }
@@ -40,6 +41,7 @@ class Runtime {
     this.shadow = new ShadowClient(c, { stateQuotes: this.stateQuotes, ...(workerFactory ? { workerFactory } : {}) });
     this.engine = new Engine(c, this.store, this.executor, this.stream, this.shadow);
     this.preparing = new Map();
+    this.coverage = { valued: 0, unvalued: 0, reasons: {} };
   }
   pool(p) {
     const event = { ...p, source: 'stonk_migrate_confirmed', createdAt: p.graduatedAt, migrationAt: p.graduatedAt, observedAt: Date.now() };
@@ -53,8 +55,8 @@ class Runtime {
     const task = this.adapter.prepare(p).then(q => {
       this.fresh.reserve(p.pool, q.liquidity, q.slot);
       this.monitor.syncSubscriptions();
-    }).catch(() => this.store.log('stonk_valuation_unavailable', { pool: p.pool, quoteMint: p.quoteMint,
-      reason: 'no_verified_pool_metadata_or_fresh_onchain_fx' })).finally(() => this.preparing.delete(p.pool));
+    }).catch(e => this.store.log('stonk_valuation_unavailable', { pool: p.pool, quoteMint: p.quoteMint,
+      ...diagnostic(e), valuationDetails: e.valuationDetails })).finally(() => this.preparing.delete(p.pool));
     this.preparing.set(p.pool, task);
   }
   async swap(s, at) {
@@ -63,10 +65,13 @@ class Runtime {
     try {
       const normalized = await this.adapter.swap(s, at);
       if (!active(s, Date.now()) || this.engine.stopped) return;
+      this.coverage.valued++;
       this.engine.onSwaps([normalized]);
-    } catch {
+    } catch (e) {
+      this.coverage.unvalued++;
+      const details = diagnostic(e); this.coverage.reasons[details.reason] = (this.coverage.reasons[details.reason] || 0) + 1;
       this.store.log('stonk_unvalued_observation', { pool: s.pool, mint: s.mint, quoteMint: s.quoteMint, signature: s.signature,
-        reason: 'cannot_apply_original_sol_thresholds', rawObservation: s });
+        ...details, valuationDetails: e.valuationDetails, rawObservation: s });
       // Unknown valuation must break the proxy's coverage, not create profitable labels.
       this.shadow.enqueue({ type: 'pool_gap', pool: s.pool, reason: 'valuation_unavailable', at: Date.now() });
     }
@@ -85,6 +90,8 @@ class Runtime {
   }
   report() {
     this.fresh.prune();
+    this.stream.stonkHealth = { ...this.coverage, discoveryComplete: this.monitor.health.discoveryComplete,
+      discoveryError: this.monitor.health.discoveryError, processingErrors: this.monitor.stats.processingErrors || 0 };
     this.executor.rpcCalls = this.monitor.totalRpc;
     this.store.data.streamDays = Object.fromEntries(Object.entries(this.monitor.usage).map(([day, usage]) => [day, usage.bytes]));
     this.engine.report();

@@ -453,6 +453,7 @@ class Engine {
     const dayBytes = this.data.streamDays[new Date().toISOString().slice(0, 10)] || 0;
     this.store.log('health', { calibration: this.calibration.s ? { batchId: this.calibration.s.batchId, attempts: this.calibration.s.attempts, lossSol: this.calibration.s.lossSol, stoppedReason: this.calibration.reason(), limits: this.calibration.s.limits } : null, connected: this.stream.connected, transactions: this.ticks, parsedSwaps: this.swaps,
       rpcRequests: this.executor.rpcCalls + (this.c.market === 'stonk' ? 0 : this.shadowEvent('stats')?.stateQuotes?.requests || 0), migrationDiagnostics: this.migrationDiagnostics,
+      ...(this.c.market === 'stonk' ? { stonk: this.stream.stonkHealth } : {}),
       positions: Object.keys(this.data.positions).length, pending: Object.keys(this.data.pending).length,
       streamMBToday: +(dayBytes / 1e6).toFixed(3), estimatedStreamCreditsToday: +(dayBytes / 1e6 * 20).toFixed(1) });
     const shadow = this.shadowEvent('stats');
