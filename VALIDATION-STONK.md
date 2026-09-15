@@ -60,3 +60,10 @@
 - 合并同池同 slot 并发准备请求，并将账户准备失败缓存 5 秒，减少不可估值池每笔行情重复 RPC。
 - 将脱敏启动配置持久化到状态文件；看板明确显示已连接但处理受阻／覆盖未完整，修正实盘页面的模拟副标题。
 - 本机及服务器 292/292 测试通过。备份 /opt/stonk-monitor/backups/unlimited-20260915T033610Z。
+
+## 2026-09-15 修复实盘候选过滤请求缺失
+
+- 根因：Engine 要求实盘过滤结果，但 ShadowClient 仅为模拟／校准模式创建请求，导致普通 Stonk 实盘收到 undefined；日志确认至少 3 个候选被 prebuy_filter_unavailable 拒绝。
+- 为 Stonk 实盘启用相同过滤请求，不跳过过滤；日志改用 live_prebuy_filter 与 stonk_live scope。
+- 新增真实 Shadow 工作线程到 LiveEngine 模拟发送器的集成测试，不发送链上交易。本机及服务器 293/293 测试通过。
+- 已部署，备份 /opt/stonk-monitor/backups/live-filter-20260915T050410Z。当前无活动毕业池，尚待实际信号验证真实成交。

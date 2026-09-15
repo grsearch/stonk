@@ -9,7 +9,7 @@ class ShadowClient {
     this.accepting = true; this.exited = false; this.drain = null;
     this.filterTiming = { version: 1, requests: 0, responses: 0, timeouts: 0, lateResponses: 0,
       maxQueueMs: 0, maxComputeMs: 0, maxRoundTripMs: 0 };
-    this.paperFilter = (c.dryRun && c.paperPrebuyFilter) || !!c.calibration?.enabled; this.filters = new Map(); this.filterSequence = 0;
+    this.paperFilter = (c.dryRun && c.paperPrebuyFilter) || !!c.calibration?.enabled || (c.market === 'stonk' && !c.dryRun); this.filters = new Map(); this.filterSequence = 0;
     if (!this.enabled) return;
     this.stateQuotes = stateQuotes || new (require('./state-quotes').StateQuotes)(c);
     // Never serialize the wallet secret or the API URL/key into a learning event or workerData.

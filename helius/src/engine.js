@@ -102,9 +102,9 @@ class Engine {
       const reason = !arm ? 'prebuy_filter_unavailable' : arm.status === 'reject' ? 'prebuy_risk_filter'
         : this.c.calibration?.enabled && require('./entry-guard').historyUnavailable(arm) ? 'prebuy_history_required'
         : !isSignal(swap, this.c) ? 'expired_after_prebuy_filter' : null;
-      const detail = { version: 1, scope: this.c.calibration?.enabled ? 'live_calibration' : 'paper_only', selectionId: result?.selectionId ?? null,
+      const detail = { version: 1, scope: this.executor.stonkLive ? 'stonk_live' : this.c.calibration?.enabled ? 'live_calibration' : 'paper_only', selectionId: result?.selectionId ?? null,
         status: arm?.status || 'unavailable', rejected: arm?.rejected || [], unknown: arm?.unknown || [], waitMs: Date.now() - startedAt };
-      this.store.log(this.c.calibration?.enabled ? 'calibration_prebuy_filter' : 'paper_prebuy_filter', { mint: swap.mint, pool: swap.pool, signature: swap.signature, ...detail, reason });
+      this.store.log(this.executor.stonkLive ? 'live_prebuy_filter' : this.c.calibration?.enabled ? 'calibration_prebuy_filter' : 'paper_prebuy_filter', { mint: swap.mint, pool: swap.pool, signature: swap.signature, ...detail, reason });
       this.shadowEvent('decision', swap, reason ? 'skipped' : 'prebuy_filter_checked', { reason, prebuyFilter: detail });
       if (reason) return;
     }

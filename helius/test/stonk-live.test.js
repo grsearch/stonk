@@ -66,3 +66,35 @@ test('live timer still sells after graduation expiry and does not fabricate a cl
   const e=new LiveEngine(c,store,{stonkLive:true},{connected:true});let why;e.sell=async(_p,r)=>{why=r};await e.tick();
   assert.equal(why,'graduation_window_end');assert.ok(store.data.positions[mint]);
 });
+
+test('live Stonk receives a real Shadow filter response and reaches the mocked sender', async t => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const Shadow = require('../src/shadow/client');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'stonk-live-filter-'));
+  const config = { ...c, shadow: { ...c.shadow, directory: dir } };
+  const shadow = new Shadow(config);
+  t.after(async () => { await shadow.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const deadline = Date.now() + 5000;
+  while (shadow.stats().status !== 'running' && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+  assert.equal(shadow.stats().status, 'running');
+  shadow.connection(true);
+  const now = Date.now();
+  const swap = { pool, mint, market: 'stonk', quoteMint: WSOL, graduatedAt: now - 1000,
+    signature: 'live-candidate', slot: 10, side: 'sell', sellSol: 8, quoteSol: 8, impact: 20, liquidity: 200,
+    receivedAt: now, eventTime: now, price: 1e-9, postBase: '200000000000', postQuote: '200000000000',
+    postQuoteRaw: '200000000000', quoteDecimals: 9, fx: { rate: 1 }, transferFees: { base: [], quote: [] }, virtual: '0' };
+  shadow.poolCreated({ ...swap, source: 'stonk_migrate_confirmed', createdAt: now - 1000, migrationAt: now - 1000, observedAt: now });
+  const store = { data: { wallet: wallet.publicKey.toBase58(), positions: {}, pending: {}, cleanup: {}, cooldown: {}, seen: {} },
+    logs: [], save() {}, log(type, r) { this.logs.push({ type, ...r }); } };
+  let sent = 0;
+  const executor = { stonkLive: true, async buildSwap() { return { signature: 'mock-signed', wire: 'mock-only', lastValidBlockHeight: 100 }; }, async submit() { sent++; } };
+  const engine = new LiveEngine(config, store, executor, { connected: true, budgetExceeded: () => false }, shadow);
+  engine.onSwaps([swap]);
+  const until = Date.now() + 3000;
+  while (!sent && Date.now() < until && !store.logs.some(r => r.type === 'operation_error')) await new Promise(r => setTimeout(r, 10));
+  assert.equal(shadow.filterTiming.requests, 1);
+  assert.equal(shadow.filterTiming.responses, 1);
+  assert.equal(sent, 1, JSON.stringify(store.logs));
+  assert.ok(store.logs.some(r => r.type === 'live_prebuy_filter' && r.scope === 'stonk_live' && r.reason === null));
+  assert.ok(store.data.pending['mock-signed']);
+});
