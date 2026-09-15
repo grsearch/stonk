@@ -11,6 +11,7 @@ function readConfig(env = process.env) {
   c.liveEntryPolicy.lossCooldownMs = c.paperLossCooldownMs;
   // Retain the future live policy without loading or enabling an executor.
   c.liveExitPolicy = { version: 1, takeProfit: 10, trailArm: 8, trailDrop: 3, maxHoldMs: c.maxHoldMs };
+  c.freshSubscriptions.maxAgeMs = require('./protocol').WINDOW_MS;
   c.market = 'stonk'; c.stonk = monitorConfig(env);
   if (env.STONK_MAX_STREAM_BYTES_PER_DAY === undefined) c.stonk.maxBytes = c.maxBytesPerDay || Infinity;
   // Live requires the explicit Stonk opt-in; DRY_RUN alone cannot enable it.

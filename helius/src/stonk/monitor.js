@@ -244,9 +244,10 @@ class Monitor {
       this.pools = new Map(state.pools.filter(p => PLATFORMS.includes(p.platform) && active(p, this.now())).map(p => [p.pool, p]));
       this.cursors = state.cursors || {}; this.usage = state.usage || {}; this.stats = state.stats || this.stats;
       this.historyScans = state.historyScans || {}; this.historyHeads = state.historyHeads || {};
+      if (state.windowMs !== WINDOW_MS) { this.cursors = {}; this.historyScans = {}; this.historyHeads = {}; this.health.discoveryComplete = false; }
     }
     for (const p of this.pools.values()) this.callbacks.onPool?.(p);
-    this.running = true; this.log('starting', { mode: 'stonk-paper-shadow', windowMinutes: 30 }); this.connect();
+    this.running = true; this.log('starting', { mode: 'stonk-paper-shadow', windowMinutes: WINDOW_MS / 60000 }); this.connect();
     this.tick = setInterval(() => {
       this.expire(); this.syncSubscriptions(); this.save();
       if (this.ws?.readyState === 0 && this.now() - this.connectAt > 20000) this.ws.close();

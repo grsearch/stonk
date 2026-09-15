@@ -1,4 +1,5 @@
 'use strict';
+const { WINDOW_MS: STONK_WINDOW_MS } = require('./protocol');
 const { Engine } = require('../engine');
 const { exitReason } = require('../strategy');
 function fill(p, receipt, wallet) {
@@ -57,7 +58,7 @@ class LiveEngine extends Engine {
       await this.reconcile();
       for (const p of Object.values(this.data.positions)) {
         const now = Date.now();
-        const why = p.exitRetryReason || (now >= p.graduatedAt + 1800000 ? 'graduation_window_end'
+        const why = p.exitRetryReason || (now >= p.graduatedAt + STONK_WINDOW_MS ? 'graduation_window_end'
           : now - p.openedAt >= this.c.maxHoldMs ? 'max_hold' : now - p.lastPriceAt >= this.c.quoteTimeoutMs ? 'quote_timeout'
             : exitReason(p, p.lastPrice, this.c, now));
         if (why) await this.sell(p, why);

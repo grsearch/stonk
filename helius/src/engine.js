@@ -1,4 +1,5 @@
 'use strict';
+const { WINDOW_MS: STONK_WINDOW_MS } = require('./stonk/protocol');
 const normalize = (...args) => require('./parser').normalize(...args);
 const parseSwaps = (...args) => require('./parser').parseSwaps(...args);
 
@@ -198,7 +199,7 @@ class Engine {
   }
   async sell(p, reason) {
     if (this.c.market === 'stonk' && !this.c.dryRun && !this.executor.stonkLive) throw new Error('Stonk live trading is disabled');
-    if (this.c.market === 'stonk' && this.c.dryRun && Date.now() >= p.graduatedAt + 1800000) { this.expirePool(p.pool); return; }
+    if (this.c.market === 'stonk' && this.c.dryRun && Date.now() >= p.graduatedAt + STONK_WINDOW_MS) { this.expirePool(p.pool); return; }
     if (!this.c.dryRun && !p.exitRetryReason) { p.exitRetryReason = reason; this.store.save(); }
     reason = p.exitRetryReason || reason;
     p.exitDiagnostic ||= { version: 1, firstTriggerAt: Date.now(), reason, triggerPrice: p.lastPrice,
@@ -416,7 +417,7 @@ class Engine {
       await this.reconcile();
       // Timeout exits must work even if market streaming disconnects or hits its budget.
       for (const p of Object.values(this.data.positions)) {
-        if (this.c.market === 'stonk' && Date.now() >= p.graduatedAt + 1800000) { this.expirePool(p.pool); continue; }
+        if (this.c.market === 'stonk' && Date.now() >= p.graduatedAt + STONK_WINDOW_MS) { this.expirePool(p.pool); continue; }
         const fresh = Date.now() - p.lastPriceAt <= Math.max(5000, this.c.positionPollMs * 2);
         const reason = p.exitRetryReason || (fresh ? exitReason(p, p.lastPrice, this.c)
           : Date.now() - p.openedAt >= exitConfig(this.c).maxHoldMs ? 'max_hold' : null);

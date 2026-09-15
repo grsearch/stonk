@@ -61,7 +61,7 @@ test('confirmed buy/sell settles ledger and starts loss cooldown, while expiry p
   const s=receipt('sell',90000000);e.applyReceipt(s.pending,s.receipt);assert.equal(store.data.positions[mint],undefined);assert.ok(store.data.lossCooldowns[mint]>Date.now()+59000);
 });
 test('live timer still sells after graduation expiry and does not fabricate a closure',async()=>{
-  const now=Date.now(),p={mint,pool,graduatedAt:now-1800001,openedAt:now-20001,lastPriceAt:now};
+  const now=Date.now(),p={mint,pool,graduatedAt:now-7200001,openedAt:now-20001,lastPriceAt:now};
   const store={data:{positions:{[mint]:p},pending:{},cleanup:{},cooldown:{},seen:{}},save(){},log(){}};
   const e=new LiveEngine(c,store,{stonkLive:true},{connected:true});let why;e.sell=async(_p,r)=>{why=r};await e.tick();
   assert.equal(why,'graduation_window_end');assert.ok(store.data.positions[mint]);

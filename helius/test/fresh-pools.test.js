@@ -48,3 +48,14 @@ test('subscription error and deadline terminate transport rather than silently l
   c.start();c.pending.get(1).at=0;c.update([]);assert.equal(failures,1);
   c.ack({id:1,error:{code:-1}});assert.equal(failures,2);
 });
+
+test('Stonk observes through 30 minutes and closes exactly at two hours', () => {
+ const now=Date.now(); const store={data:{},save(){},log(){}};
+ const f=new FreshPools(store,{market:'stonk'});
+ const e={source:'stonk_migrate_confirmed',migrationAt:now,createdAt:now,pool:'s',mint:'m',reserveSol:150,slot:1};
+ f.created(e,now);
+ assert.equal(f.reason(e,now+1800000),null);
+ assert.equal(f.reason(e,now+7199999),null);
+ assert.equal(f.reason(e,now+7200000),'graduation_age_2_hours');
+ assert.deepEqual(f.addresses(now+7200000),[]);
+});

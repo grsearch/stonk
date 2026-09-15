@@ -60,7 +60,7 @@ test('CPMM account decoder and adapter use mint precision, effective reserves, a
   const q = await adapter.prepare({ ...p, graduatedAt: now - 1000 });
   assert.equal(q.postBase, '99999997000'); assert.equal(q.liquidity, 100); assert.equal(q.postQuote, '100000000000');
   assert.equal(q.quoteMint, p.quoteMint); assert.deepEqual(q.transferFees, { base: [], quote: [] });
-  await assert.rejects(adapter.prepare({ ...p, graduatedAt: now - 1800000 }));
+  await assert.rejects(adapter.prepare({ ...p, graduatedAt: now - 7200000 }));
   a[0].owner = TOKEN; await assert.rejects(adapter.prepare({ ...p, graduatedAt: now - 1000 }));
 });
 test('Token-2022 transfer fee schedules and caps are included in Shadow proxy round-trip', () => {
@@ -98,9 +98,9 @@ test('original state-quote scheduler reads all five Stonk accounts and returns t
   const rows = await q.poll([s]); assert.deepEqual(requested.params[0], adapter.keys(s));
   assert.equal(rows[0].status, 'quoted'); assert.equal(rows[0].quote.market, 'stonk'); assert.equal(rows[0].quote.liquidity, 100); q.close();
 });
-test('Shadow 30-minute cutoff censors proxy entry and all recovery arms without a fictitious close', () => {
+test('Shadow two-hour cutoff censors proxy entry and all recovery arms without a fictitious close', () => {
   const at = Date.now(), events = [], tracker = new Tracker(options(c), r => events.push(r), { now: () => at });
-  const graduatedAt = at - 1799000;
+  const graduatedAt = at - 7199000;
   tracker.ages.created({ ...p, createdAt: graduatedAt, migrationAt: graduatedAt, observedAt: at, source: 'stonk_migrate_confirmed' });
   tracker.connection(true, at);
   const s = { ...p, market:'stonk', graduatedAt, signature:'candidate', receivedAt:at, eventTime:at, side:'sell', sellSol:8, quoteSol:8,

@@ -42,7 +42,7 @@ test('migration requires Stonk config in exact position and LaunchLab program', 
   assert.equal(migrations(normalize(caught)).length, 0);
   const unseeded = raw(); unseeded.meta.postTokenBalances = []; assert.equal(migrations(normalize(unseeded)).length, 0);
 });
-test('strict graduation window includes zero, excludes 30 minutes, unknown and future', () => {
+test('strict graduation window includes zero, excludes 2 hours, unknown and future', () => {
   assert.equal(active(pool, epoch), true); assert.equal(active(pool, epoch + WINDOW_MS - 1), true);
   assert.equal(active(pool, epoch + WINDOW_MS), false); assert.equal(active(pool, epoch - 1), false);
   assert.equal(active({ ...pool, graduatedAt: undefined }, epoch), false);
@@ -109,7 +109,7 @@ test('restoring state keeps original graduation and excludes expired pools', asy
 });
 test('legacy SOL and live settings cannot enable trading or change 30-minute window', () => {
   const c = config({ HELIUS_API_KEY: 'test', DRY_RUN: 'false', MIN_SELL_SOL: '8', MAX_AGE_MS: '99999999' });
-  assert.equal(c.dryRun, undefined); assert.equal(c.minSellSol, undefined); assert.equal(WINDOW_MS, 1800000);
+  assert.equal(c.dryRun, undefined); assert.equal(c.minSellSol, undefined); assert.equal(WINDOW_MS, 7200000);
   assert.throws(() => config({ HELIUS_API_KEY: 'test', STONK_DUMP_PCT: 'NaN' }));
 });
 test('RPC budget is enforced and resets on next UTC day', async t => {

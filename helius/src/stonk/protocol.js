@@ -3,7 +3,7 @@ const { createHash } = require('node:crypto');
 const LAUNCHLAB = 'LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj';
 const CPMM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 const PLATFORMS = ['6BwHHDg3u1854jC8PDLXvR4spTcLNaoBxLJNGC4nTESt', '4E876qZTE9FJMrBzgVtBrSrzz2TLivB5Y5QXPjB4gZL7'];
-const WINDOW_MS = 30 * 60 * 1000;
+const WINDOW_MS = 2 * 60 * 60 * 1000;
 const tag = name => createHash('sha256').update(`global:${name}`).digest().subarray(0, 8);
 function decode58(s) {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';

@@ -1,4 +1,5 @@
 'use strict';
+const { WINDOW_MS: STONK_WINDOW_MS } = require('../stonk/protocol');
 const crypto = require('node:crypto');
 const { Features } = require('./features');
 const { Model } = require('./model');
@@ -85,7 +86,7 @@ class Tracker {
     this.emit({ type: 'coverage_gap', reason, at });
   }
   onSwap(s, candidate, fresh, at = s.receivedAt) {
-    if (this.c.market === 'stonk' && (!Number.isSafeInteger(s.graduatedAt) || at < s.graduatedAt || at >= s.graduatedAt + 1800000)) return;
+    if (this.c.market === 'stonk' && (!Number.isSafeInteger(s.graduatedAt) || at < s.graduatedAt || at >= s.graduatedAt + STONK_WINDOW_MS)) return;
     this.sequence++;
     const key = `${s.signature}:${s.pool}`;
     if (this.seen.has(key)) return;
@@ -223,7 +224,7 @@ class Tracker {
   }
   tick(at) {
     if (this.c.market === 'stonk') for (const e of this.ages.pools.values())
-      if (at >= e.createdAt + 1800000) this.poolExpired(e.pool, at);
+      if (at >= e.createdAt + STONK_WINDOW_MS) this.poolExpired(e.pool, at);
     this.entryComparisons?.tick(at);
     this.recovery?.tick(at);
     this.exitRecovery?.tick(at); this.stateRecovery?.tick(at);

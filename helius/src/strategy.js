@@ -1,7 +1,8 @@
 'use strict';
+const { WINDOW_MS: STONK_WINDOW_MS } = require('./stonk/protocol');
 function matchesBaseSignal(s, c) {
   if (c.market === 'stonk' && (s.market !== 'stonk' || !Number.isSafeInteger(s.graduatedAt) ||
-      Date.now() < s.graduatedAt || Date.now() >= s.graduatedAt + 1800000)) return false;
+      Date.now() < s.graduatedAt || Date.now() >= s.graduatedAt + STONK_WINDOW_MS)) return false;
   return s.side === 'sell' && s.sellSol >= c.minSellSol && s.impact >= c.minImpact && s.impact <= c.maxImpact && s.liquidity >= c.minLiquidity;
 }
 function isSignal(s, c, now = Date.now()) {

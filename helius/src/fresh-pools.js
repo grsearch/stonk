@@ -1,17 +1,24 @@
 'use strict';
 const { WSOL } = require('./config');
 const WINDOW = 1800000;
+const { WINDOW_MS } = require('./stonk/protocol');
 class FreshPools {
   constructor(store, { market = 'pump' } = {}) {
     this.market = market;
+    this.window = market === 'stonk' ? WINDOW_MS : WINDOW;
+    this.ageReason = market === 'stonk' ? 'graduation_age_2_hours' : 'graduation_age_30_minutes';
     this.store = store; this.pools = store.data.freshPools ||= {};
     if (typeof this.pools !== 'object' || Array.isArray(this.pools)) throw new Error('Invalid fresh pool state');
     this.vaultPools = new Map(Object.entries(this.pools).filter(([,p])=>p.quoteVault).map(([pool,p])=>[p.quoteVault,pool]));
   }
   created(e, now = Date.now()) {
     if (e.source !== (this.market === 'stonk' ? 'stonk_migrate_confirmed' : 'pump_migrate_processed') || e.migrationAt !== e.createdAt || !Number.isSafeInteger(e.migrationAt)
-      || e.migrationAt > now || now - e.migrationAt >= WINDOW || !e.pool || !e.mint) return;
+      || e.migrationAt > now || now - e.migrationAt >= this.window || !e.pool || !e.mint) return;
     const old = this.pools[e.pool];
+    if (old && this.market === 'stonk' && old.closedReason === 'graduation_age_30_minutes' && old.mint === e.mint && old.migrationAt === e.migrationAt) {
+      old.closedReason = null; delete old.closedAt; old.reserveSol = null; delete old.reserveSlot;
+      this.store.save(); this.store.log('fresh_pool_window_extended', { pool: e.pool, windowMs: this.window });
+    }
     if (old) {
       if (old.mint !== e.mint || old.migrationAt !== e.migrationAt) this.close(e.pool, 'migration_conflict', now);
       return;
@@ -51,13 +58,13 @@ class FreshPools {
     const p = this.pools[s.pool];
     if (!p || p.mint !== s.mint) return 'fresh_pool_not_discovered';
     if (p.closedReason) return p.closedReason;
-    if (now < p.migrationAt || now - p.migrationAt >= WINDOW) return 'graduation_age_30_minutes';
+    if (now < p.migrationAt || now - p.migrationAt >= this.window) return this.ageReason;
     return p.reserveSol == null ? 'fresh_pool_reserve_unknown' : null;
   }
   addresses(now = Date.now()) {
-    for (const [pool,p] of Object.entries(this.pools)) if (now - p.migrationAt >= WINDOW) this.close(pool, 'graduation_age_30_minutes', now);
+    for (const [pool,p] of Object.entries(this.pools)) if (now - p.migrationAt >= this.window) this.close(pool, this.ageReason, now);
     const protectedPools = Object.values(this.store.data.positions || {}).concat(Object.values(this.store.data.pending || {})).map(p=>p.pool || p.swap?.pool).filter(Boolean);
-    return [...new Set([...Object.entries(this.pools).filter(([,p])=>!p.closedReason && now >= p.migrationAt && now-p.migrationAt<WINDOW).map(([pool])=>pool), ...protectedPools])].sort();
+    return [...new Set([...Object.entries(this.pools).filter(([,p])=>!p.closedReason && now >= p.migrationAt && now-p.migrationAt<this.window).map(([pool])=>pool), ...protectedPools])].sort();
   }
   prune(now = Date.now()) {
     for (const [pool,p] of Object.entries(this.pools)) if (now-p.migrationAt>86400000) { if (p.quoteVault) this.vaultPools.delete(p.quoteVault); delete this.pools[pool]; }
