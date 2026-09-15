@@ -1,6 +1,7 @@
 'use strict';
 function reason(c, data, swap, now = Date.now()) {
-  if (c.dryRun || !c.liveEntryPolicy) return null;
+  if (c.dryRun) return c.market === 'stonk' && (data.lossCooldowns?.[swap.mint] || 0) > now ? 'paper_loss_cooldown' : null;
+  if (!c.liveEntryPolicy) return null;
   if (!Number.isFinite(swap.liquidity)) return 'live_reserve_unknown';
   if (swap.liquidity <= c.liveEntryPolicy.reserveExclusiveSol) return 'live_reserve_at_most_100_sol';
   if ((data.lossCooldowns?.[swap.mint] || 0) > now) return 'live_loss_cooldown';

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const { install, check } = require('../scripts/install-observation-models');
-const { readConfig } = require('../src/config'), { assumptions, policyId } = require('../src/shadow/tracker');
+const { readConfig } = require('../src/stonk/config'), { assumptions, policyId } = require('../src/shadow/tracker');
 const { train } = require('../src/shadow/training'), { FEATURE_NAMES } = require('../src/shadow/features');
 test('pair installation validates before editing, preserves trading secrets and advances observation time', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-pair-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }));

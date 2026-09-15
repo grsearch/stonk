@@ -216,6 +216,11 @@ class Engine {
           accountingVersion: 'paper_spot_v1', diagnostic });
         this.shadowEvent('decision', p, 'paper_sell', { mint: p.mint, positionId: p.signature, reason,
           accountingVersion: 'paper_spot_v1', grossPnlSol: Number(p.rawAmount) * p.lastPrice - p.entrySol, diagnostic });
+        if (this.c.market === 'stonk' && Number(p.rawAmount) * p.lastPrice - p.entrySol < 0) {
+          this.data.lossCooldowns ||= {};
+          this.data.lossCooldowns[p.mint] = Date.now() + this.c.paperLossCooldownMs;
+          this.store.log('paper_loss_cooldown_started', { mint: p.mint, cooldownUntil: this.data.lossCooldowns[p.mint], accountingVersion: 'paper_spot_v1' });
+        }
         delete this.data.positions[p.mint]; this.store.save(); return;
       }
       const built = await this.executor.buildSwap('sell', p, p.rawAmount);

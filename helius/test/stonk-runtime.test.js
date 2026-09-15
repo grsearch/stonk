@@ -32,17 +32,18 @@ function options(c) { return { ...c.shadow, market: c.market, sizeSol: c.sizeSol
 const c = readConfig({ HELIUS_API_KEY: 'test' });
 test('Stonk forces paper and Shadow while preserving every original strategy and research setting', async () => {
   const original = originalConfig({ HELIUS_API_KEY: 'test' });
-  for (const k of ['minSellSol','minImpact','maxImpact','minLiquidity','sizeSol','maxPositions','cooldownMs','takeProfit','stopLoss','trailArm','trailDrop','maxHoldMs','maxSignalAgeMs','paperPrebuyFilter']) assert.equal(c[k], original[k], k);
+  for (const k of ['minImpact','maxImpact','minLiquidity','sizeSol','maxPositions','cooldownMs','takeProfit','stopLoss','trailArm','trailDrop','maxSignalAgeMs','paperPrebuyFilter']) assert.equal(c[k], original[k], k);
   for (const k of ['entryDelayMs','exitDelayMs','entryDeadlineMs','feeBps','slippageBps','entryComparisons','exitComparisons','stateQuotes']) assert.equal(c.shadow[k], original.shadow[k], k);
-  assert.equal(policyId(assumptions(options(c))), '4aa9d98cc8a3e538');
+  assert.equal(c.minSellSol, 7); assert.equal(c.maxHoldMs, 20000); assert.equal(c.paperLossCooldownMs, 60000);
+  assert.equal(c.shadow.experimentLossCooldownMs, 60000); assert.notEqual(policyId(assumptions(options(c))), '4aa9d98cc8a3e538');
   const forced = readConfig({ HELIUS_API_KEY: 'test', DRY_RUN: 'false', LIVE_CALIBRATION: 'true', SHADOW_ENABLED: 'false', WALLET_PRIVATE_KEY_BS58: 'must-not-load' });
   assert.equal(forced.dryRun, true); assert.equal(forced.shadow.enabled, true); assert.equal(forced.calibration.enabled, false); assert.equal(forced.privateKey, '');
   assert.throws(() => { forced.dryRun = false; });
   const executor = new PaperExecutor(); await assert.rejects(executor.buildSwap()); await assert.rejects(executor.submit()); await assert.rejects(executor.closeAccount());
 });
-test('original frozen models are loaded as references with the original policy id', () => {
+test('old frozen models cannot score the changed Stonk strategy', () => {
   const records = [], t = new Tracker(options(c), r => records.push(r));
-  assert.equal(t.model.status, 'experimental_calibrated_model'); assert.equal(t.drawdownModel.status, 'experimental_calibrated_model');
+  assert.equal(t.model.status, 'invalid_or_incompatible_model'); assert.equal(t.drawdownModel.status, 'invalid_or_incompatible_model');
   assert.equal(records[0].source, 'confirmed_stonk_cpmm_swaps'); assert.match(records[0].modelDomain, /not_stonk_validated/);
 });
 test('Stonk migration AGE is accepted by the original selection rules', () => {
@@ -208,4 +209,23 @@ test('failed Raydium estimates retain safe RPC diagnostics and back off repeated
   at+=31000; await assert.rejects(v.rate(p.quoteMint)); assert.ok(calls>before);
   const {diagnostic}=require('../src/stonk/diagnostics');
   assert.equal(JSON.stringify(diagnostic(Error('https://private/?api-key=secret'))).includes('secret'),false);
+});
+
+test('Stonk paper loss cooldown survives engine recreation, expires at one minute, and max hold triggers at 20 seconds', async()=>{
+ const {Engine}=require('../src/engine'),{reason}=require('../src/live-entry-policy');
+ const store={data:{positions:{},pending:{},cleanup:{},seen:{},cooldown:{}},logs:[],save(){},log(type,r){this.logs.push({type,...r})}};
+ const make=()=>new Engine(c,store,{}, {connected:true,budgetExceeded:()=>false});
+ let e=make(); const now=Date.now();const position={...p,graduatedAt:now-1000,signature:'loss',rawAmount:'100',entrySol:1,entryPrice:.01,lastPrice:.009,lastPriceAt:now,openedAt:now-20001};store.data.positions[p.mint]=position;
+ e.lastPoll=now;e.lastCleanup=now;await e.tick();
+ assert.ok(store.logs.some(r=>r.type==='paper_sell'&&r.reason==='max_hold'));
+ const until=store.data.lossCooldowns[p.mint];assert.ok(until>=now+60000&&until<Date.now()+60001);
+ e=make();assert.equal(reason(c,e.data,p,until-1),'paper_loss_cooldown');assert.equal(reason(c,e.data,p,until),null);assert.equal(reason(c,e.data,{mint:'other'},until-1),null);
+});
+
+test('disabled live policy shares the requested sell threshold, loss cooldown and holding limit',()=>{
+ const {matchesBaseSignal,exitConfig}=require('../src/strategy');const {reason,recordLoss}=require('../src/live-entry-policy');
+ const live={...c,dryRun:false};const at=Date.now();const s={market:'stonk',mint:'m',graduatedAt:at-1000,side:'sell',sellSol:7,impact:20,liquidity:200};
+ assert.equal(matchesBaseSignal(s,live),true);assert.equal(matchesBaseSignal({...s,sellSol:6.999},live),false);assert.equal(exitConfig(live).maxHoldMs,20000);
+ const data={};recordLoss(live,data,{mint:'m',side:'sell',status:'confirmed',netPnlSol:-.01,receiptObservedAt:at});
+ assert.equal(reason(live,data,s,at+59999),'live_loss_cooldown');assert.equal(reason(live,data,s,at+60000),null);assert.equal(c.dryRun,true);
 });
