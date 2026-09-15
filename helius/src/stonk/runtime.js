@@ -22,8 +22,9 @@ class PaperExecutor {
 }
 class Runtime {
   constructor(c, { monitorOptions = {}, workerFactory, store } = {}) {
-    if (c.market !== 'stonk' || c.dryRun !== true || !c.shadow.enabled || c.calibration.enabled) throw Error('Stonk requires paper and Shadow');
-    this.c = c; this.store = store || new Store(c.stateFile, 'paper', 'stonk-paper'); this.executor = new PaperExecutor();
+    if (c.market !== 'stonk' || !c.shadow.enabled || c.calibration.enabled) throw Error('Stonk requires paper and Shadow');
+    this.c = c; this.executor = c.dryRun ? new PaperExecutor() : new (require('./live-executor').LiveExecutor)(c);
+    this.store = store || new Store(c.stateFile, c.dryRun ? 'paper' : 'live', c.dryRun ? 'stonk-paper' : this.executor.wallet.publicKey.toBase58());
     this.fresh = new FreshPools(this.store, { market: 'stonk' });
     this.monitor = new Monitor(c.stonk, { ...monitorOptions,
       shouldSubscribe: pool => this.fresh.addresses().includes(pool),
@@ -39,7 +40,8 @@ class Runtime {
       request: async (_url, options) => { const body = JSON.parse(options.body); const result = await rpc(body.method, body.params, { signal: options.signal });
         return { ok: true, json: async () => ({ result }) }; } });
     this.shadow = new ShadowClient(c, { stateQuotes: this.stateQuotes, ...(workerFactory ? { workerFactory } : {}) });
-    this.engine = new Engine(c, this.store, this.executor, this.stream, this.shadow);
+    const EngineType = c.dryRun ? Engine : require('./live-engine').LiveEngine;
+    this.engine = new EngineType(c, this.store, this.executor, this.stream, this.shadow);
     this.preparing = new Map();
     this.coverage = { valued: 0, unvalued: 0, reasons: {} };
   }
@@ -78,7 +80,7 @@ class Runtime {
   }
   start() {
     for (const p of Object.values(this.store.data.positions)) if (!active(p, Date.now())) this.engine.expirePool(p.pool);
-    this.store.log('starting', { mode: 'paper', market: 'stonk', liveExecution: 'disabled_in_code', strategyConfig: publicConfig(this.c) });
+    this.store.log('starting', { mode: this.c.dryRun ? 'paper' : 'live', market: 'stonk', liveExecution: this.c.dryRun ? 'disabled' : 'raydium_atomic', strategyConfig: publicConfig(this.c) });
     this.monitor.start();
     this.tick = setInterval(() => this.engine.tick(), 1000);
     this.reportTimer = setInterval(() => this.report(), 60000);

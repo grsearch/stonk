@@ -12,7 +12,7 @@
   "engines": {
     "node": ">=22.16"
   },
-  "description": "Stonk graduated CPMM pools: first 30 minutes, observation only",
+  "description": "Stonk graduated CPMM pools: first 30 minutes, Raydium live execution and Shadow",
   "dependencies": {
     "@pump-fun/pump-swap-sdk": "1.19.0",
     "@solana/spl-token": "0.4.14",

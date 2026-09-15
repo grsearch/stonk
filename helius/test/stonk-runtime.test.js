@@ -32,9 +32,9 @@ function options(c) { return { ...c.shadow, market: c.market, sizeSol: c.sizeSol
 const c = readConfig({ HELIUS_API_KEY: 'test' });
 test('Stonk forces paper and Shadow while preserving every original strategy and research setting', async () => {
   const original = originalConfig({ HELIUS_API_KEY: 'test' });
-  for (const k of ['minImpact','maxImpact','minLiquidity','sizeSol','maxPositions','cooldownMs','takeProfit','stopLoss','trailArm','trailDrop','maxSignalAgeMs','paperPrebuyFilter']) assert.equal(c[k], original[k], k);
+  for (const k of ['minImpact','maxImpact','minLiquidity','maxPositions','cooldownMs','takeProfit','stopLoss','trailArm','trailDrop','maxSignalAgeMs','paperPrebuyFilter']) assert.equal(c[k], original[k], k);
   for (const k of ['entryDelayMs','exitDelayMs','entryDeadlineMs','feeBps','slippageBps','entryComparisons','exitComparisons','stateQuotes']) assert.equal(c.shadow[k], original.shadow[k], k);
-  assert.equal(c.minSellSol, 7); assert.equal(c.maxHoldMs, 20000); assert.equal(c.paperLossCooldownMs, 60000);
+  assert.equal(c.sizeSol, .1); assert.equal(c.minSellSol, 7); assert.equal(c.maxHoldMs, 20000); assert.equal(c.paperLossCooldownMs, 60000);
   assert.equal(c.shadow.experimentLossCooldownMs, 60000); assert.notEqual(policyId(assumptions(options(c))), '4aa9d98cc8a3e538');
   const forced = readConfig({ HELIUS_API_KEY: 'test', DRY_RUN: 'false', LIVE_CALIBRATION: 'true', SHADOW_ENABLED: 'false', WALLET_PRIVATE_KEY_BS58: 'must-not-load' });
   assert.equal(forced.dryRun, true); assert.equal(forced.shadow.enabled, true); assert.equal(forced.calibration.enabled, false); assert.equal(forced.privateKey, '');
@@ -116,7 +116,7 @@ test('Shadow 30-minute cutoff censors proxy entry and all recovery arms without 
 });
 test('real Shadow worker runs, responds to original prebuy filter, paper buys/sells, and censors at graduation deadline', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'stonk-runtime-'));
-  const config = readConfig({ HELIUS_API_KEY:'test', STATE_FILE:path.join(dir,'paper.json'), SHADOW_DIRECTORY:path.join(dir,'shadow'), STONK_DATA_DIR:dir });
+  const config = readConfig({ HELIUS_API_KEY:'test', POSITION_SIZE_SOL:'1', STATE_FILE:path.join(dir,'paper.json'), SHADOW_DIRECTORY:path.join(dir,'shadow'), STONK_DATA_DIR:dir });
   const handlers = {}; const socket = { readyState: 0, addEventListener: (n,f) => { handlers[n]=f; }, send() {}, close() { this.readyState=3; handlers.close?.(); } };
   const runtime = new Runtime(config,{monitorOptions:{rpc:async()=>[],socketFactory:()=>socket}});
   const logs=[]; runtime.store.log=(type,data)=>logs.push({type,...data}); runtime.monitor.log=()=>{};

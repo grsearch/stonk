@@ -43,3 +43,11 @@
 - 实盘继续强制关闭；Raydium 和毕业 30 分钟限制保持。旧模型策略标识不兼容，因此评分不可用，Shadow 仍继续采样。
 - 本机和服务器 282/282 测试通过，覆盖主模拟亏损冷却、重建引擎后的状态保留、20 秒超时及未开启实盘的阈值。
 - 服务器配置和原文件备份：`/opt/stonk-monitor/backups/strategy-20260915T005936Z`。
+
+## 2026-09-15 Raydium 实盘启用
+
+- 完成独立执行器、回执核对及真实持仓到期退出。模拟/实盘使用不同账本，实盘默认每笔 0.1 SOL，需显式 STONK_LIVE_ENABLED=true。
+- 288/288 测试在本机 Node 24 和服务器 Node 22 通过，包括路由金额/最低输出/目的账户/非 Raydium 指令拒绝、回执身份、净亏损冷却和到期保留真实持仓。
+- SOL 直接 CPMM 池 DREQ7fyveGL7dXxB7EsjgSDmRNceuD5W7J4hUgznZbFM、经 AMC 中转的 CPMM 池 4ZnqNTaxFXTSn5ZtFEr32THEtAPG3NoqvqQC4YBnkb8k 均通过完整往返链上模拟；买入模拟约 0.6 秒，非实际成交速度。
+- 验证准备仅创建两个空 ATA（无买卖），交易 5woQHZwuxsqNTaU4hiT4uj3JwRFTLEV2GE7Hxkrwfmabdu8ZHQ4dwxxnn6gvsLz8vcEjoxX5sBFKwk3oyS9x7CNU 已确认。
+- 北京时间 2026-09-15 10:49 启用实盘，备份目录 /opt/stonk-monitor/backups/live-20260915T024925Z。通过模拟不保证未来流动性、发行者权限、报价可用性或每次退出成功；失败持仓持续保留。

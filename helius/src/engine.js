@@ -85,7 +85,7 @@ class Engine {
     finally { this.entryGuards.delete(token); }
   }
   async prepareBuy(swap, filter, guard) {
-    if (this.c.market === 'stonk' && (!this.c.dryRun || !isSignal(swap, this.c))) return;
+    if (this.c.market === 'stonk' && ((!this.c.dryRun && !this.executor.stonkLive) || !isSignal(swap, this.c))) return;
     if (this.stream.fresh?.reason(swap)) return;
     const policyReason = require('./live-entry-policy').reason(this.c, this.data, swap);
     if (policyReason) {
@@ -93,7 +93,7 @@ class Engine {
         reason: policyReason, reserveSol: swap.liquidity, cooldownUntil: this.data.lossCooldowns?.[swap.mint] ?? null });
       this.shadowEvent('decision', swap, 'skipped', { reason: policyReason }); return;
     }
-    if ((this.c.dryRun && this.c.paperPrebuyFilter) || this.c.calibration?.enabled) {
+    if ((this.c.dryRun && this.c.paperPrebuyFilter) || this.c.calibration?.enabled || this.executor.stonkLive) {
       const startedAt = Date.now();
       // Same pre-dump snapshot as the research worker; no duplicate history or RPC.
       const result = swap.sellSol >= 40 ? { arm: { status: 'reject', rejected: [{ check: 'dumpSize', reason: 'dump_size_below_40_sol' }] } }
@@ -197,8 +197,8 @@ class Engine {
     }
   }
   async sell(p, reason) {
-    if (this.c.market === 'stonk' && !this.c.dryRun) throw new Error('Stonk live trading is disabled');
-    if (this.c.market === 'stonk' && Date.now() >= p.graduatedAt + 1800000) { this.expirePool(p.pool); return; }
+    if (this.c.market === 'stonk' && !this.c.dryRun && !this.executor.stonkLive) throw new Error('Stonk live trading is disabled');
+    if (this.c.market === 'stonk' && this.c.dryRun && Date.now() >= p.graduatedAt + 1800000) { this.expirePool(p.pool); return; }
     if (!this.c.dryRun && !p.exitRetryReason) { p.exitRetryReason = reason; this.store.save(); }
     reason = p.exitRetryReason || reason;
     p.exitDiagnostic ||= { version: 1, firstTriggerAt: Date.now(), reason, triggerPrice: p.lastPrice,

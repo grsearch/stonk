@@ -32,7 +32,7 @@ for service in stonk-monitor stonk-dashboard stonk-upload; do
 done
 cp "$SCRIPT_DIR/stonk-upload.timer" /etc/systemd/system/stonk-upload.timer
 systemctl daemon-reload
-echo "Installed Stonk paper + Shadow. Configure $INSTALL_DIR/helius/.env. Live trading is disabled in code."
+echo "Installed Stonk paper + Shadow. Configure $INSTALL_DIR/helius/.env. Live requires explicit STONK_LIVE_ENABLED=true and wallet configuration."
 echo 'Start: sudo systemctl enable --now stonk-monitor'
 echo 'Dashboard: sudo systemctl enable --now stonk-dashboard (127.0.0.1:8788)'
 echo 'COS: configure helius/.cos.env, then sudo systemctl enable --now stonk-upload.timer'
