@@ -36,7 +36,7 @@ function mint(a, { quoteAsset = false } = {}) {
     }
   }
   if (fees.some(f => f.bps > 10000)) throw Error('Invalid transfer fee bps');
-  return { decimals: b[44], program: a.owner, fees, ...(quoteAsset ? { controls, accounting: 'raw_units_not_scaled_ui', executable: false } : {}) };
+  return { decimals: b[44], supplyRaw: b.readBigUInt64LE(36).toString(), program: a.owner, fees, ...(quoteAsset ? { controls, accounting: 'raw_units_not_scaled_ui', executable: false } : {}) };
 }
 function vault(a, expectedMint, expectedAuthority) {
   const b = bytes(a);

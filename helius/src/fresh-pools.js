@@ -6,7 +6,7 @@ class FreshPools {
   constructor(store, { market = 'pump' } = {}) {
     this.market = market;
     this.window = market === 'stonk' ? WINDOW_MS : WINDOW;
-    this.ageReason = market === 'stonk' ? 'graduation_age_2_hours' : 'graduation_age_30_minutes';
+    this.ageReason = market === 'stonk' ? 'graduation_age_4_hours' : 'graduation_age_30_minutes';
     this.store = store; this.pools = store.data.freshPools ||= {};
     if (typeof this.pools !== 'object' || Array.isArray(this.pools)) throw new Error('Invalid fresh pool state');
     this.vaultPools = new Map(Object.entries(this.pools).filter(([,p])=>p.quoteVault).map(([pool,p])=>[p.quoteVault,pool]));
@@ -15,7 +15,7 @@ class FreshPools {
     if (e.source !== (this.market === 'stonk' ? 'stonk_migrate_confirmed' : 'pump_migrate_processed') || e.migrationAt !== e.createdAt || !Number.isSafeInteger(e.migrationAt)
       || e.migrationAt > now || now - e.migrationAt >= this.window || !e.pool || !e.mint) return;
     const old = this.pools[e.pool];
-    if (old && this.market === 'stonk' && old.closedReason === 'graduation_age_30_minutes' && old.mint === e.mint && old.migrationAt === e.migrationAt) {
+    if (old && this.market === 'stonk' && ['graduation_age_30_minutes', 'graduation_age_2_hours'].includes(old.closedReason) && old.mint === e.mint && old.migrationAt === e.migrationAt) {
       old.closedReason = null; delete old.closedAt; old.reserveSol = null; delete old.reserveSlot;
       this.store.save(); this.store.log('fresh_pool_window_extended', { pool: e.pool, windowMs: this.window });
     }

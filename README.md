@@ -1,104 +1,38 @@
-# Stonk 专用：Raydium 实盘 / 主模拟 + Shadow
+# Stonk RSI 小额实盘
 
-此版保留原程序的 Engine、主模拟仓位、Shadow 工作线程、特征统计、买入前过滤、双评分模型、入场对照、退出对照、断流恢复、状态报价恢复、训练工具、完整 Dashboard 和 COS 归档流程。仅将行情适配为 Stonk 毕业后的 CPMM 池，并保留毕业后 2 小时的监控限制。
+当前部署策略：STONK_STRATEGY=rsi，STONK_LIVE_ENABLED=true。只交易经链上验证的 Stonk 毕业 Raydium CPMM 池；估值和交易路由仅使用 Raydium CPMM/CLMM，不使用 Meteora。
 
-2026-09-14 已对齐指定参考目录 `E:\dump-sniper-clean-main\dump-v5-publish` 的 `404d67d` 版本。包含新增的 3 秒反弹失败退出对照、归档训练与检查工具、低储备关闭新候选和持仓行情修正。运行入口仍为 Stonk，保留原模拟策略；参考程序专供实盘的止盈 10%、最长持有 20 秒、取消固定止损和行情超时退出不会套用到本版模拟／Shadow。
+## 当前规则
 
-默认仍是模拟。实盘必须显式设置 `STONK_LIVE_ENABLED=true` 并配置钱包；单独设置 `DRY_RUN=false` 不会启用。实盘使用独立 Raydium 执行器，账本为 `data/stonk/live.json`，Shadow 为 `data/stonk/shadow-live`，不继承模拟持仓。Shadow 始终启用。
-
-## 保留的原策略
-
-当前 Stonk 参数：砸单至少 7 SOL、跌幅 10%–30%、报价储备至少 30 SOL、服务器当前每笔模拟 0.1 SOL（安装示例同步为 0.1）、最多 20 仓、止盈 20%、止损 25%、上涨 10% 后回撤 3% 退出、最长持有 20 秒（每秒巡检触发超时退出）。同币主模拟亏损后冷却 60 秒，Shadow 冷却对照同为 60 秒；普通入场冷却仍为 30 秒。实盘使用 0.1 SOL 默认金额、7 SOL 门槛、60 秒确认净亏损冷却和 20 秒持仓上限；沿用参考实盘的 >100 SOL 入场储备、10% 止盈、8% 上涨后回撤 3% 退出、无固定止损及报价超时退出。20 秒为退出触发时间，不保证链上成交时间。
-
-另外沿用参考版本的新池储备规则：储备未知时不能开仓，SOL 等值储备一旦低于 50 SOL，该池永久停止接收新候选；重启或储备回升不重新开放。因此新候选实际还需通过这层 50 SOL 限制。无持仓的关闭池会退订，有模拟仓位则保留退出行情，直到平仓或毕业满 2 小时。股票代币储备先通过 Stonk 适配层换算为 SOL，不直接比较代币数量。
-
-主模拟使用原 `paper_spot_v1` 的池价记账；Shadow 使用原费用、滑点、入场／退出延迟和对照实验，并添加 Token-2022 转账费。两种统计不混为实盘收益。
-
-冻结模型 `observation-models/20260908` 采用旧参数；本次 20 秒持仓策略已改变策略标识，兼容性检查会拒绝旧模型评分。Shadow 继续采样和对照，不伪造新参数模型分数。
-
-## 毕业后 2 小时
-
-- 必须匹配 Stonk 的平台配置、LaunchLab 迁移指令、成功日志和新注资的 CPMM 金库。
-- AGE 从迁移交易的链上 blockTime 开始，范围固定为 `0 <= AGE < 2 小时`。重启和重复发现不重新计时。
-- 启动、重连及每分钟检查近期迁移；只订阅 Stonk 发现账户与活动池。
-- 满 2 小时退订，不再开模拟仓位；未完成的主模拟与 Shadow 对照标记为“观察到期／结果未知”。不使用过期价格伪造平仓，也不将缺失结果记为亏损或盈利。
-- 曲线内交易、其他平台以及没有毕业迁移的历史 CLMM 池不进入策略。
-
-## 非 SOL 报价资产
-
-自动通过 Helius 查询 Raydium 的 CPMM／CLMM 池，寻找报价资产与 WSOL 的直接估值，或经过 USDC 的估值。候选估值池需达到程序的深度门槛；价格来自已验证账户状态，缓存 5 秒、超时拒绝，不使用 DAS 的长缓存价格。交易与估值均不接入 Meteora。
-
-股票报价 mint 支持已核验的 Token-2022 发行者控制、未启用的转账钩子、未暂停状态及 Scaled UI Amount 等扩展。内部全程使用原始整数余额和 decimals，UI 倍率不重复计入估值；仍计入公开转账费。已启用的转账钩子、暂停、未知或损坏扩展仍拒绝。估值支持不代表资产必然可以兑换；实盘另行验证 Raydium 路由与链上模拟，本币的扩展限制仍保留。
-
-毕业历史默认使用 Helius `getTransactionsForAddress` 批量读取成功交易，保存翻页进度和时间范围，避免平台交易过多时反复从第一页开始。实时发现要求交易同时涉及 Stonk 平台、LaunchLab 和 CPMM。历史交易仅用于发现毕业池，不回放成新的模拟成交。`STONK_BATCH_HISTORY=false` 可回退旧发现方式，但繁忙平台可能长期扫描不完整。
-
-把报价金额、储备和池价统一估算为 SOL 后，交给原来的金额门槛和策略。记录仍保留原始报价 mint、精度、整数余额、估值来源及转账费用。
-
-**这仍是研究用代理估值，不是可执行的兑换路由。** 本版没有新增实盘兑换。状态报价会扣除 CPMM 已累计的协议、基金和创建者费用；成交观察用近期费用快照，因此仍是近似值。Shadow 沿用原来的整体费用／滑点假设，另计两边代币的转账费，不声称包含真实兑换路径的全部成本。
-
-如果报价资产没有可用的上述估值池、状态读取失败或扩展不受支持，该池仍有原始交易日志，但对应观测不参与 SOL 阈值判断或生成模拟利润，记录 `stonk_unvalued_observation`。该池的 Shadow 覆盖会中断，不影响其他池。实际报价资产覆盖率需联网验证。
-
-日志会区分扩展拒绝、RPC 错误、过期与估值失败，并附带安全的错误码；`health.stonk` 提供本次运行的已估值／未估值数量及发现完整性。看板对“所有观测未通过估值”及历史扫描未完成显示警告，连接正常不等于策略已得到有效行情。
-
-## 启动与观察
-
-需要 Node.js 22.16 或更新版本及 npm。
-
-1. 在项目根目录运行 `npm run setup` 安装锁定版本依赖。
-2. 将 `helius/.env.example` 复制为 `helius/.env`，填写 Helius 密钥或 RPC/WSS 地址。
-3. 运行 `npm start`，启动 Stonk 行情、原主模拟与 Shadow。
-4. 另一个终端运行 `npm run dashboard`，打开 http://127.0.0.1:8788 。
-
-看板恢复为原完整面板：模拟持仓、盈亏、Shadow 状态、模型状态、对照观察及归档状态。`shadow_health.status=running` 才表示工作线程已运行。`samples` 与 `outcomes` 表示实际收到候选和后续观察；没有候选不等于线程没运行。
-
-仅本项目 `helius/.env` 被主程序读取，进程环境优先。COS 密钥仍由独立归档任务读取。
+- 单笔输入固定 0.02 SOL，链上手续费和创建代币账户租金另计。
+- 毕业后最多观察 4 小时；FDV 严格小于 15,000 USD 时永久关闭本池新买入。已持仓仍保留退出行情与交易管理，可延续至原持仓时间上限。旧版单因年龄关闭的池可在新窗口内重新发现，储备/FDV 关闭不恢复。
+- Birdeye 指定池 15 秒已收盘 K 线，按链上 mint 顺序设置 inversion。目标币/报价资产的收盘价计算 Wilder RSI(7)，至少 8 根有效起始收盘价；补齐查询区间内无成交间隔，但零量 K 线不能触发买入。
+- 最近已完成 K 线 RSI <30、收盘>=开盘、有成交量。不得使用未收盘 K 线。
+- 最近15秒买入金额占比>=60%，最近5秒买入>=卖出，至少3个买入钱包，最近5秒最低池价格不低于前10秒最低价；总成交额>=max(1 SOL, 报价侧储备*0.5%)。这是未验证策略参数。
+- 原报价侧储备>100 SOL、估值兑换池深度>=100 SOL、储备跌破50 SOL永久关闭、亏损后60秒冷却、同币禁止加仓等约束保留。7 SOL 大砸单和旧 Shadow 过滤不再参与 RSI 入场。一次超卖过程最多尝试一次已进入交易准备的买入，RSI回到30以上后重新允许；状态落盘，重启不清空。
+- 未接管时：已完成 K 线 RSI>80先触发则卖出；净可卖回 SOL 达到买入成本+40%先触发则锁定移动止盈，之后忽略RSI退出，净价值从峰值回撤10%卖出。同轮同时满足时RSI优先。
+- 最长持仓30分钟（从确认买入记录开始），超时优先退出。退出状态/峰值落盘，失败重试和不明交易回执核对沿用原执行器。
+- 可卖回净额取Raydium整仓实际路由报价outputAmount减预计网络费，不是成交保证；每个仓位约3秒检查一次，受请求耗时影响。无报价持续60秒触发退出重试；单纯10秒没有成交不再自动卖出。
+- 资金流卖出研究分支不启用，避免引入第三种接管规则。Shadow不启动、不进行Shadow试运行。
 
 ## 数据与部署
 
-默认数据独立位于 `helius/data/stonk`：`paper.json` 与 `.jsonl` 是原模拟账本，`shadow/` 是原 Shadow 样本和 AGE 缓存，`state.json` 与每日 JSONL 是 Stonk 发现和原始监控记录，`exports/` 是归档。
+Birdeye用于池K线历史/每根收盘更新及全局SOL美元价；Helius用于毕业发现、链上账户和逐笔资金流。每池每15秒最多一次K线轮询，最多3个并发；SOL价格共享缓存。无本地日预算，提供商计费/限流仍适用。
 
-原 `MAX_STREAM_MB_PER_DAY` 流量设置保留，0 表示不设流量上限；如明确设置 `STONK_MAX_STREAM_BYTES_PER_DAY` 则覆盖它。新增发现／估值 HTTP 请求有默认每日 20,000 次预算，可用 `STONK_MAX_RPC_PER_DAY` 调整；它不是 Helius credits 账单。达到限制后相关观察可能无法估值，日志会显示原因。
+FDV = 经验证池内目标币的SOL单价 * 链上当前供应量 * Birdeye SOL/USD；每笔成功估值和约15秒账户轮询均检查阈值。SOL价格要求60秒内有效，账户/估值缺失时停止该池入场，不将缺失当0。价格更新与网络延迟决定实际检测时延，不能保证链上跌破的同一瞬间退订。
 
-发现扫描默认每个平台最多 10 页、每页 100 个签名。到达页数上限标记 `discovery_incomplete`，不推进不完整扫描的游标。离线交易不回填为实时信号。当前交易解析范围为 legacy/v0。
+设置 helius/.env：
 
-Linux 使用 `sudo bash deploy/install.sh`，默认安装到 `/opt/stonk-monitor`。脚本安装原模块、依赖、模型、看板和归档服务；不覆盖原 PumpSwap 服务，不自动启动。
+    STONK_STRATEGY=rsi
+    STONK_LIVE_ENABLED=true
+    BIRDEYE_API_KEY=<本机/服务器私密配置>
+    HELIUS_API_KEY=<私密配置>
+    WALLET_PRIVATE_KEY_BS58=<私密配置>
 
-```sh
-sudo systemctl enable --now stonk-monitor
-sudo systemctl enable --now stonk-dashboard
-journalctl -u stonk-monitor -f
-# 填好 helius/.cos.env 后再启动原有每日归档流程：
-sudo systemctl enable --now stonk-upload.timer
-```
+RSI运行时强制0.02 SOL、30分钟、Shadow关闭，旧.env的0.1/20秒不会覆盖这些值。保持live.json账本，升级要求旧策略持仓和待确认交易已处理完毕。密钥文件APIKEY.TXT不可提交、打包、打印。
 
-COS 归档沿用原北京时间 07:00 和恢复检查，默认前缀改为 `stonk/daily`。原离线训练、模型安装和研究脚本仍在 `helius/scripts`。
+日志rsi_bar、rsi_observation、rsi_entry_candidate、rsi_signal、rsi_exit_quote保存研究和实盘证据；buy_confirmed/sell_confirmed保持原对账格式。看板24小时盈亏包含旧策略的历史交易，请按starting的strategy和时间分段分析。
 
-## 验证
+发行包 dist/stonk-rsi-live-4h.zip；旧first30m命名包仅保留兼容别名，其内容也已更新，文件名不表示当前窗口。
 
-`npm test` 运行原有回归测试与 Stonk 测试。受限 Windows 环境可在 Node 24 使用 `node --test --test-isolation=none helius/test/*.test.js`。
-
-已通过原测试和新增测试，包括真实 Shadow 工作线程启动、原过滤响应、主模拟买入／止盈、2 小时删失、CPMM 与非 SOL 精度、转账税、状态验证和实盘封锁。尚未配置真实 Helius 密钥，没有完成线上样本与报价覆盖率验收。
-
-协议依据：
-- LaunchLab IDL：https://github.com/raydium-io/raydium-docs/blob/master/public/launchpad_creator_fee_upgrade/raydium_launchpad.json
-- CPMM 状态：https://github.com/raydium-io/raydium-cp-swap/blob/master/programs/cp-swap/src/states/pool.rs
-- CLMM 布局：https://github.com/raydium-io/raydium-sdk-V2/blob/master/src/raydium/clmm/layout.ts
-- Stonk 平台地址：https://docs.bitquery.io/docs/blockchain/Solana/stonkfun-api/
-
-部署请使用 `dist/stonk-paper-shadow-first30m.zip`。上一版 `stonk-monitor-first30m.zip` 同步更新为相同内容。`helius-pumpswap-v5.zip` 是历史包，不用于本版。另一份 `dump-sniper-clean-main` 未修改。
-
-Raydium CLMM 估值深度同时受虚拟储备和链上金库余额（扣除协议及基金费用）限制；这只是保守的现货估值代理，不代表跨 tick 可执行报价。低于原有 100 SOL 等值深度的估值路径继续拒绝。最新区块时间暂不可用时，只允许使用同一笔已确认交易的链上时间。
-
-## SSH 更新钱包
-
-在服务器交互终端执行 `sudo python3 /opt/stonk-monitor/deploy/update-wallet.py`，按提示输入 Base58 格式的 Solana 钱包私钥。输入隐藏，只输出校验后的钱包地址。工具仅更新 `.env` 并限制权限为 600，不重启、不启用交易。钱包更新工具不会启用实盘。更换正在使用的钱包前必须先处理当前真实持仓与待确认交易；独立账本会拒绝钱包身份不匹配。
-
-## Raydium 实盘执行
-
-仅使用 Raydium 官方 Trade API 报价和构建原子交易，链上查询、模拟和发送通过 Helius。逐池验证 CPMM/CLMM owner、mint、Stonk 目标池，拒绝 Meteora、未知可执行程序、多笔拆分、金额及收款账户不一致的指令。签名前重新设置本地费用上限和有效 blockhash，先检查反向报价并模拟。确认失败则拒绝发送；发送后以已签名交易的签名核对结果，不重新买入未知交易。
-
-真实持仓在毕业 2 小时结束时触发退出并保留账本，失败继续处理，不能像模拟样本一样删失。净盈亏按该钱包在买卖回执中的 SOL 余额变化计算，包含交易费用和新账户租金支出；不自动清理代币账户。交易使用 confirmed 数据与外部报价，不能保证同 slot 或下一 slot 成交；buy_confirmed 记录 sourceSlot、slot 和 slotDelta。
-
-本地每日 RPC 和流量预算默认不限额（STONK_MAX_RPC_PER_DAY=0、STONK_MAX_STREAM_BYTES_PER_DAY=0）。保留用量统计，不会因达到旧的 20,000 次而阻断处理；服务商自身额度及限速仍有效。同池同 slot 的并发账户读取合并，失败缓存 5 秒后重试。启动配置独立持久化，看板日志截断不会丢失生效参数；连接与处理受阻／覆盖未完整分开显示。
-
-监控窗口现为毕业后 2 小时；最长持仓仍为 20 秒。Stonk 买入前过滤已删除毕业 30–120 分钟排除规则，整个两小时窗口均可按其他条件参与买入。旧版按 30 分钟到期关闭的池在重新验证毕业且仍处于两小时窗口时恢复观察，储备重新估值；储备不足等其他关闭原因不恢复。
+本地/服务器测试以及0.02 SOL买入交易模拟和反向报价用于工程验证，不证明盈利。仅在自然信号满足时发送实盘订单。历史策略文档见 docs/legacy-dump-strategy.md，不代表当前规则。

@@ -22,7 +22,7 @@ function scrub(value, secrets = []) {
   return value;
 }
 function publicConfig(c) {
-  const keys = ['market', 'liveExitPolicy', 'liveFixedStopLoss', 'liveEntryPolicy', 'calibration', 'dryRun', 'paperPrebuyFilter', 'minSellSol', 'minImpact', 'maxImpact', 'minLiquidity', 'sizeSol', 'maxPositions', 'cooldownMs',
+  const keys = ['market', 'strategy', 'rsi', 'liveExitPolicy', 'liveFixedStopLoss', 'liveEntryPolicy', 'calibration', 'dryRun', 'paperPrebuyFilter', 'minSellSol', 'minImpact', 'maxImpact', 'minLiquidity', 'sizeSol', 'maxPositions', 'cooldownMs',
     'maxSignalAgeMs', 'takeProfit', 'stopLoss', 'trailArm', 'trailDrop', 'maxHoldMs', 'buySlippageBps', 'sellSlippageBps',
     'closeAfterMs', 'cleanupIntervalMs', 'blockhashMs', 'positionPollMs', 'quoteTimeoutMs', 'computeUnits', 'priorityLamports', 'tipLamports',
     'maxBytesPerDay', 'maxCandidatesPerMinute'];

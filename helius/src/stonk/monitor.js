@@ -16,14 +16,14 @@ function config(env = process.env) {
     batchHistory: env.STONK_BATCH_HISTORY !== 'false' };
 }
 class Monitor {
-  constructor(config, { rpc, socketFactory, now = Date.now, onPool, onSwap, onExpired, onConnection, onGap, shouldSubscribe = () => true } = {}) {
+  constructor(config, { rpc, socketFactory, now = Date.now, onPool, onSwap, onExpired, onConnection, onGap, shouldSubscribe = () => true, retainPool = () => false } = {}) {
     this.config = config; this.now = now; this.rpcOverride = rpc;
     this.socketFactory = socketFactory || (url => new WebSocket(url));
     this.pools = new Map(); this.seen = new Map(); this.blockTimes = new Map(); this.cursors = {}; this.usage = {}; this.stats = { trades: 0, dumps: 0 };
     this.subscriptions = new Map(); this.pending = new Map(); this.nextId = 0; this.queue = Promise.resolve(); this.running = false;
     this.health = { lastDiscoveryAt: null, discoveryComplete: false, discoveryError: null };
     this.callbacks = { onPool, onSwap, onExpired, onConnection, onGap };
-    this.shouldSubscribe = shouldSubscribe;
+    this.shouldSubscribe = shouldSubscribe; this.retainPool = retainPool;
     this.historyScans = {}; this.historyHeads = {};
     this.totalRpc = 0; this.abort = new AbortController();
   }
@@ -58,7 +58,7 @@ class Monitor {
     return result.result;
   }
   expire() {
-    for (const [id, p] of this.pools) if (!active(p, this.now())) { this.pools.delete(id); this.log('expired', { pool: id, graduatedAt: p.graduatedAt }); this.callbacks.onExpired?.(id); }
+    for (const [id, p] of this.pools) if (!active(p, this.now()) && !this.retainPool(id)) { this.pools.delete(id); this.log('expired', { pool: id, graduatedAt: p.graduatedAt }); this.callbacks.onExpired?.(id); }
     for (const [id, time] of this.seen) if (this.now() - time > WINDOW_MS) this.seen.delete(id);
   }
   async process(raw, signature, discoveryOnly = false) {
@@ -93,7 +93,7 @@ class Monitor {
       if (!active(record, this.now()) || this.pools.has(p.pool)) continue;
       this.pools.set(p.pool, record); this.log('graduated', record); this.save(); this.syncSubscriptions(); this.callbacks.onPool?.(record);
     }
-    if (!discoveryOnly) for (const trade of swaps(tx, this.pools, this.now())) {
+    if (!discoveryOnly) for (const trade of swaps(tx, this.pools, this.now(), this.retainPool)) {
       this.stats.trades++; this.log('trade', { ...trade, signature });
       await this.callbacks.onSwap?.({ ...trade, signature }, receivedAt);
       if (trade.side === 'sell' && trade.vaultRatioChangePct <= -this.config.dumpPct) {
@@ -241,7 +241,7 @@ class Monitor {
     if (fs.existsSync(file)) {
       const state = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (state.version !== 1 || !['stonk-monitor-only', 'stonk-paper-shadow'].includes(state.mode)) throw Error('Incompatible Stonk state');
-      this.pools = new Map(state.pools.filter(p => PLATFORMS.includes(p.platform) && active(p, this.now())).map(p => [p.pool, p]));
+      this.pools = new Map(state.pools.filter(p => PLATFORMS.includes(p.platform) && (active(p, this.now()) || this.retainPool(p.pool))).map(p => [p.pool, p]));
       this.cursors = state.cursors || {}; this.usage = state.usage || {}; this.stats = state.stats || this.stats;
       this.historyScans = state.historyScans || {}; this.historyHeads = state.historyHeads || {};
       if (state.windowMs !== WINDOW_MS) { this.cursors = {}; this.historyScans = {}; this.historyHeads = {}; this.health.discoveryComplete = false; }

@@ -3,7 +3,7 @@ const { createHash } = require('node:crypto');
 const LAUNCHLAB = 'LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj';
 const CPMM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 const PLATFORMS = ['6BwHHDg3u1854jC8PDLXvR4spTcLNaoBxLJNGC4nTESt', '4E876qZTE9FJMrBzgVtBrSrzz2TLivB5Y5QXPjB4gZL7'];
-const WINDOW_MS = 2 * 60 * 60 * 1000;
+const WINDOW_MS = 4 * 60 * 60 * 1000;
 const tag = name => createHash('sha256').update(`global:${name}`).digest().subarray(0, 8);
 function decode58(s) {
   const alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -50,10 +50,10 @@ function migrations(tx) {
       }));
 }
 function active(pool, now) { return Number.isSafeInteger(pool.graduatedAt) && now >= pool.graduatedAt && now < pool.graduatedAt + WINDOW_MS; }
-function swaps(tx, pools, now) {
+function swaps(tx, pools, now, retained = () => false) {
   const out = [];
   for (const [pool, p] of pools) {
-    if (!active(p, now) || !Number.isSafeInteger(tx.blockTime) || tx.blockTime * 1000 < p.graduatedAt || tx.blockTime * 1000 >= p.graduatedAt + WINDOW_MS) continue;
+    if ((!active(p, now) && !retained(pool)) || !Number.isSafeInteger(tx.blockTime) || tx.blockTime * 1000 < p.graduatedAt || (!retained(pool) && tx.blockTime * 1000 >= p.graduatedAt + WINDOW_MS)) continue;
     const calls = tx.instructions.filter(ix => ix.program === CPMM && ix.accounts.includes(pool));
     // Vault deltas are transaction-wide: reject repeated swaps and mixed LP operations.
     if (calls.length !== 1) continue;

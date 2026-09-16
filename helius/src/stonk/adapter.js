@@ -3,10 +3,10 @@ const { cpmm, mint, vault } = require('./accounts');
 const { active } = require('./protocol');
 const { afterTransfer } = require('./proxy-quotes');
 class Adapter {
-  constructor(rpc, valuation, now = Date.now) { this.rpc = rpc; this.valuation = valuation; this.now = now; this.cache = new Map(); this.prepares = new Map(); this.prepareFailures = new Map(); }
+  constructor(rpc, valuation, now = Date.now, isActive = active) { this.isActive = isActive; this.rpc = rpc; this.valuation = valuation; this.now = now; this.cache = new Map(); this.prepares = new Map(); this.prepareFailures = new Map(); }
   keys(s) { return [s.pool, s.mint, s.quoteMint, s.baseVault, s.quoteVault]; }
   async state(s, values, slot) {
-    if (!active(s, this.now())) throw Error('Graduation window ended');
+    if (!this.isActive(s, this.now())) throw Error('Graduation window ended');
     const pool = cpmm(values[0]), base = mint(values[1]), quote = mint(values[2], { quoteAsset: true });
     const order = pool.mint0 === s.mint;
     if ((order ? pool.mint0 : pool.mint1) !== s.mint || (order ? pool.mint1 : pool.mint0) !== s.quoteMint || (order ? pool.vault0 : pool.vault1) !== s.baseVault ||
@@ -16,15 +16,15 @@ class Adapter {
     const postQuote = vault(values[4], s.quoteMint) - (order ? pool.fees1 : pool.fees0);
     if (postBase <= 0n || postQuote <= 0n) throw Error('Empty effective reserves');
     const fx = await this.valuation.rate(s.quoteMint);
-    if (!active(s, this.now())) throw Error('Graduation window ended');
+    if (!this.isActive(s, this.now())) throw Error('Graduation window ended');
     const metadata = { at: this.now(), slot, feeBase: (order ? pool.fees0 : pool.fees1).toString(), feeQuote: (order ? pool.fees1 : pool.fees0).toString(),
-      baseDecimals: base.decimals, quoteDecimals: quote.decimals, tokenProgram: base.program, transferFees: { base: base.fees, quote: quote.fees },
+      supplyRaw: base.supplyRaw, baseDecimals: base.decimals, quoteDecimals: quote.decimals, tokenProgram: base.program, transferFees: { base: base.fees, quote: quote.fees },
       quoteAssetControls: quote.controls, quoteAccounting: quote.accounting };
     this.cache.set(s.pool, metadata);
     return this.convert({ ...s, ...metadata, postBase: postBase.toString(), postQuoteRaw: postQuote.toString(), slot }, fx);
   }
   async prepare(s) {
-    if (!active(s, this.now())) throw Error('Graduation window ended');
+    if (!this.isActive(s, this.now())) throw Error('Graduation window ended');
     const failure = this.prepareFailures.get(s.pool);
     if (failure && this.now() - failure.at < 5000) throw failure.error;
     const key = s.pool + ':' + s.slot;
@@ -49,7 +49,7 @@ class Adapter {
     let meta = this.cache.get(s.pool);
     if (!meta || this.now() - meta.at > 15000) { await this.prepare(s); meta = this.cache.get(s.pool); }
     const fx = await this.valuation.rate(s.quoteMint);
-    if (this.now() - fx.at > 15000 || !active(s, this.now())) throw Error('Stale valuation');
+    if (this.now() - fx.at > 15000 || !this.isActive(s, this.now())) throw Error('Stale valuation');
     // Keep the event's own reserves. Do not use a later RPC snapshot as the earlier execution observation.
     const enriched = this.convert({ ...s, ...meta, slot: s.slot,
       postBase: (BigInt(s.postBase) - BigInt(meta.feeBase)).toString(),

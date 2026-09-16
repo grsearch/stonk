@@ -73,7 +73,7 @@ class Engine {
   error(stage, err) {
     // Network exceptions can contain the API key URL. Redact both URLs and configured secrets.
     let message = String(err.message).replace(/https?:\/\/\S+/g, '[endpoint]');
-    for (const secret of [this.c.apiKey, this.c.privateKey]) if (secret) message = message.split(secret).join('[redacted]');
+    for (const secret of [this.c.apiKey, this.c.privateKey, this.c.birdeyeApiKey]) if (secret) message = message.split(secret).join('[redacted]');
     this.store.log('operation_error', { stage, code: Number.isInteger(err.code) ? err.code : null,
       contextSlot: Number.isSafeInteger(err.data?.contextSlot) ? err.data.contextSlot : null, error: message });
   }
@@ -94,7 +94,7 @@ class Engine {
         reason: policyReason, reserveSol: swap.liquidity, cooldownUntil: this.data.lossCooldowns?.[swap.mint] ?? null });
       this.shadowEvent('decision', swap, 'skipped', { reason: policyReason }); return;
     }
-    if ((this.c.dryRun && this.c.paperPrebuyFilter) || this.c.calibration?.enabled || this.executor.stonkLive) {
+    if (this.c.strategy !== 'rsi' && ((this.c.dryRun && this.c.paperPrebuyFilter) || this.c.calibration?.enabled || this.executor.stonkLive)) {
       const startedAt = Date.now();
       // Same pre-dump snapshot as the research worker; no duplicate history or RPC.
       const result = swap.sellSol >= 40 ? { arm: { status: 'reject', rejected: [{ check: 'dumpSize', reason: 'dump_size_below_40_sol' }] } }
@@ -142,7 +142,7 @@ class Engine {
     this.store.save();
     this.shadowEvent('decision', swap, 'preparing', { mode: this.c.dryRun ? 'paper' : 'live' });
     try {
-      this.store.log('dump_signal', { mint: swap.mint, pool: swap.pool, sellSol: swap.sellSol, impact: swap.impact, signal: swap.signature });
+      this.store.log(this.c.strategy === 'rsi' ? 'rsi_signal' : 'dump_signal', { mint: swap.mint, pool: swap.pool, sellSol: swap.sellSol, impact: swap.impact, signal: swap.signature });
       if (this.c.dryRun) {
         const rawAmount = Math.floor(this.c.sizeSol / swap.price).toString();
         this.data.positions[swap.mint] = { ...swap, rawAmount, entryPrice: swap.price, entrySol: this.c.sizeSol,

@@ -20,8 +20,8 @@ function render(s) {
   text('size', `${fmt(running?.sizeSol ?? s.configured.sizeSol)} SOL`);
   text('config-note', running ? `启动记录 · 文件配置 ${fmt(s.configured.sizeSol)} SOL` : '仅文件配置，尚无启动记录确认');
   text('positions', `${s.stateUpdatedAt === null ? '—' : s.positions.length} / ${running?.maxPositions ?? s.configured.maxPositions}`);
-  text('state-age', `状态落盘：${date(s.stateUpdatedAt)}`); text('samples', fmt(s.shadow.samples, 0));
-  text('sample-note', `活跃 ${fmt(s.shadow.active, 0)} · 丢弃 ${fmt(s.shadow.dropped, 0)}`);
+  text('state-age', `状态落盘：${date(s.stateUpdatedAt)}`); text('samples', running?.strategy === 'rsi' ? '未启用' : fmt(s.shadow.samples, 0));
+  text('sample-note', running?.strategy === 'rsi' ? 'RSI 实盘 · Shadow 已关闭' : `活跃 ${fmt(s.shadow.active, 0)} · 丢弃 ${fmt(s.shadow.dropped, 0)}`);
   text('traffic', `${fmt(s.health.streamMBToday)} MB`); text('credits', `流量估算 ${fmt(s.health.estimatedStreamCreditsToday)} credits · UTC 日`);
   const pnl = s.pnl24h;
   text('pnl-title', s.mode === 'live' ? '最近 24 小时 · 已平仓净收益估计' : '最近 24 小时 · 模拟已平仓账面收益');

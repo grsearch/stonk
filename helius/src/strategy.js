@@ -3,6 +3,7 @@ const { WINDOW_MS: STONK_WINDOW_MS } = require('./stonk/protocol');
 function matchesBaseSignal(s, c) {
   if (c.market === 'stonk' && (s.market !== 'stonk' || !Number.isSafeInteger(s.graduatedAt) ||
       Date.now() < s.graduatedAt || Date.now() >= s.graduatedAt + STONK_WINDOW_MS)) return false;
+  if (c.strategy === 'rsi') return s.strategy === 'rsi' && s.rsiSignal?.value < 30 && s.rsiSignal.expiresAt >= Date.now() && s.rsiSignal.flow?.pass === true && s.rsiSignal.fdvUsd >= c.rsi.minFdvUsd;
   return s.side === 'sell' && s.sellSol >= c.minSellSol && s.impact >= c.minImpact && s.impact <= c.maxImpact && s.liquidity >= c.minLiquidity;
 }
 function isSignal(s, c, now = Date.now()) {

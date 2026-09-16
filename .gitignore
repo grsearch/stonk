@@ -28,3 +28,7 @@ helius/data/
 test-results.txt
 .tooling/
 *.log
+
+# Local API credentials
+[Aa][Pp][Ii][Kk][Ee][Yy].[Tt][Xx][Tt]
+*.pem

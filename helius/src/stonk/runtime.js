@@ -22,6 +22,7 @@ class PaperExecutor {
 }
 class Runtime {
   constructor(c, { monitorOptions = {}, workerFactory, store } = {}) {
+    if (c.strategy === 'rsi') return new (require('./rsi-runtime').RsiRuntime)(c, { monitorOptions, store });
     if (c.market !== 'stonk' || !c.shadow.enabled || c.calibration.enabled) throw Error('Stonk requires paper and Shadow');
     this.c = c; this.executor = c.dryRun ? new PaperExecutor() : new (require('./live-executor').LiveExecutor)(c);
     this.store = store || new Store(c.stateFile, c.dryRun ? 'paper' : 'live', c.dryRun ? 'stonk-paper' : this.executor.wallet.publicKey.toBase58());
